@@ -41,7 +41,7 @@
   /* ---------------- Themes ---------------- */
   function applyTheme(id) {
     S.theme = id; save();
-    document.documentElement.setAttribute('data-theme', id);
+    document.documentElement.setAttribute('data-scheme', id);
     $$('#themes .swatch').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.theme === id)));
   }
   function nextTheme(random) {
@@ -283,7 +283,7 @@
             <label class="row" style="font-weight:600"><input type="checkbox" id="done" ${S.done[id] ? 'checked' : ''}> Lesson completed</label>
             <div class="row" style="margin-top:12px">
               <button class="btn sm" id="add-plan">➕ Add to my plan</button>
-              <button class="btn sm" onclick="window.print()">🖨 Print</button>
+              <button class="btn sm print-only" onclick="window.print()">🖨 Print</button>
             </div>
           </div>
           ${hasPlayable ? `<div class="card"><h3>Practise in any key</h3>${keyChooser()}<label class="small muted row" style="margin-top:10px">Tempo <input type="range" id="tempo" min="50" max="140" value="80"> <span id="tempo-v">80</span> bpm</label><label class="small muted row">Style <select id="style"><option value="block">Block</option><option value="broken">Broken</option><option value="arp">Arpeggio</option><option value="pad">Pad</option></select></label></div>` : ''}
@@ -632,7 +632,7 @@
       ${g4Overview()}
       <div class="section" style="margin-top:24px">
         <div class="spread"><div><h2 style="margin:0">${esc(prog.title)}</h2><p class="muted" style="margin:4px 0 0">${esc(prog.desc)}</p></div>
-          <div class="row no-print"><button class="btn sm" id="sched-plan">🧩 Copy to my planner</button><button class="btn sm" onclick="window.print()">🖨 Print</button></div></div>
+          <div class="row no-print"><button class="btn sm" id="sched-plan">🧩 Copy to my planner</button><button class="btn sm print-only" onclick="window.print()">🖨 Print</button></div></div>
         <div class="row small" style="margin-top:12px">
           <span class="pill">${prog.sessions.length} ${unit.toLowerCase()}s</span><span class="pill">≈ ${Math.round(totalMins / 60)} h of lesson content</span><span class="pill">${done.length} done</span>
         </div>
@@ -684,9 +684,9 @@
           <div id="plan-list" style="margin-top:12px">${S.plan.length ? S.plan.map((p, i) => planItem(p, i)).join('') : '<div class="empty">Your plan is empty. Search above, use “Add to my plan” on a lesson, or copy a schedule.</div>'}</div>
           <div class="row no-print" style="margin-top:12px">
             <button class="btn sm" id="plan-sort">Sort by level</button>
-            <button class="btn sm" id="plan-export">⬇ Export</button>
+            <button class="btn sm print-only" id="plan-export">⬇ Export</button>
             <label class="btn sm">⬆ Import<input type="file" id="plan-import" accept=".json" hidden></label>
-            <button class="btn sm" onclick="window.print()">🖨 Print</button>
+            <button class="btn sm print-only" onclick="window.print()">🖨 Print</button>
             <button class="btn sm ghost" id="plan-clear">Clear</button>
           </div>
         </div>
@@ -727,7 +727,11 @@
       row.addEventListener('drop', (e) => { e.preventDefault(); const to = +row.dataset.i; if (dragFrom === null || dragFrom === to) return; const [it] = S.plan.splice(dragFrom, 1); S.plan.splice(to, 0, it); save(); renderPlanner(); });
     });
     $('#plan-sort').onclick = () => { S.plan.sort((a, b) => byId[a.id].level - byId[b.id].level || modById[byId[a.id].module].order - modById[byId[b.id].module].order); save(); renderPlanner(); };
-    $('#plan-clear').onclick = () => { if (confirm('Clear the whole plan?')) { S.plan = []; save(); renderPlanner(); } };
+    $('#plan-clear').onclick = (e) => {
+      if (e.target.dataset.armed) { S.plan = []; save(); renderPlanner(); toast('Plan cleared'); return; }
+      e.target.dataset.armed = '1'; e.target.textContent = 'Tap again to clear';
+      setTimeout(() => { delete e.target.dataset.armed; e.target.textContent = 'Clear'; }, 3000);
+    };
     $('#plan-export').onclick = () => {
       const blob = new Blob([JSON.stringify({ name: S.planName, plan: S.plan, notes: S.notes, done: S.done }, null, 2)], { type: 'application/json' });
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = (S.planName || 'plan').replace(/\W+/g, '-') + '.json'; a.click();
@@ -910,6 +914,10 @@
     $('#fb-pair', el).onchange = draw;
     fillPairs(); draw();
   }
+
+  // Inside an embedded viewer, printing and file downloads are blocked — hide those buttons
+  const embedded = (() => { try { return window.self !== window.top; } catch (e) { return true; } })();
+  if (embedded) document.documentElement.classList.add('embedded');
 
   route();
 })();
