@@ -11,12 +11,13 @@ An interactive app for organising, structuring and scheduling a music teaching s
 | **Syllabus** | 94 lessons in 10 modules, in teaching order. Each lesson has **theory, application, examples, exercises, an assignment**, common mistakes and teacher tips. You can search and filter by level or module. |
 | **Playable examples** | Tap any chord to hear it and see it on the keyboard. Every progression **transposes to any of the 12 keys**, and you can play it in block, broken, arpeggio or pad style. |
 | **Schedules** | The full pathway (Level 1 → 4, 60 weekly lessons), three specialist tracks (Melody, Worship/Sermon Background, Guitar) and **7 crash courses**: Weekend, 2-week, 4-week bootcamp, Melody intensive, Harmony masterclass, Sermon background, Guitar starter. Set a start date to get dated lessons, and tick lessons off as you teach them. |
+| **Chord Library** | Your own directory of chords, voicings, licks and progressions. You can browse it by chord type, root, voicing style, application tag, syllabus lesson or level. **Building a voicing:** tap the notes on the keyboard, build one from a symbol in 8 voicing styles (close, open 1-5-10, worship spread, shell, rootless, drop 2, quartal, cluster), or hold a chord on your computer keys or a MIDI keyboard. The app names the chord for you. **Each entry also holds:** your notes and application, a playable progression in context, **piano-roll captures** (recorded from the on-screen keys, computer keys or a MIDI keyboard, with count-in, click and quantise), **microphone recordings** or uploaded audio, and **images** such as chart photos or DAW piano-roll screenshots. Any entry can be heard and seen in any of the 12 keys. Entries can be linked to lessons and show up on those lesson pages. The library starts with 17 example entries, and you can back it up and restore it as a JSON file. |
 | **Routine planner** | Build your own teaching order. Add lessons, drag to reorder and set the minutes for each. You can export or import your plan as JSON, and print it. It also generates a daily practice routine for any length and level. |
 | **Practice tools** | **Chord Lab** shows the chord family, Nashville numbers, functions, primary and secondary chords, relative subs, secondary dominants, tritone subs, borrowed chords and the negative-harmony mirror, plus a key transition finder. Also included: an interactive keyboard (chords and scales), an interactive circle of 4ths and 5ths, a metronome with tap tempo, and practice backing tracks with drums. |
 | **Cheat sheets** | LH accompaniment (single and multi-note), major and minor chords, inversions, scales with formulas, scale degrees, chord families in 12 keys, circles, time exercise sheets you can play, practice tracks, and a guitar fretboard chart with 3rds/4ths/5ths/6ths double stops. |
 | **Colour schemes** | 9 themes (Sunrise, Midnight Keys, Ocean, Forest, Royal Worship, Rose, Studio Mono, Neon Groove, Ember). There is a shuffle button and an option to change the scheme on every visit. |
 
-Progress, notes, ticked exercises and plans are saved in your browser (localStorage).
+Progress, notes, ticked exercises and plans are saved in your browser (localStorage). Chord Library entries, recordings and captures are saved in your browser's IndexedDB. Use **Back up library** to keep a copy or move it to another device.
 
 ## Fonts: Avenir Next
 
@@ -31,6 +32,8 @@ js/music.js           music engine: spelling, chords, keys, transposition, Web A
 js/curriculum.js      modules, schedules, crash courses, cheat-sheet data
 js/topics/*.js        lesson content (one file per module)
 js/app.js             UI: router, views, tools
+js/library.js         Chord Library: storage, directory, editor, piano-roll capture, recordings
+js/library-seed.js    starter library entries
 ```
 
 ### Adding or editing a lesson

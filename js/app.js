@@ -130,6 +130,8 @@
     });
   }
 
+  const topicHooks = [];
+
   /* ---------------- Router ---------------- */
   const routes = {
     home: renderHome, syllabus: renderSyllabus, module: renderModule, topic: renderTopic,
@@ -137,8 +139,9 @@
   };
   function route() {
     M.stopAll();
-    const [name, arg] = (location.hash.replace(/^#\/?/, '') || 'home').split('/');
-    (routes[name] || renderHome)(arg && decodeURIComponent(arg));
+    const [name, ...rest] = (location.hash.replace(/^#\/?/, '') || 'home').split('/');
+    const arg = rest.join('/');
+    (routes[name] || renderHome)(name === 'library' ? arg : arg && decodeURIComponent(arg));
     $$('#nav a, #module-nav a').forEach((a) => {
       const h = a.getAttribute('href').slice(2);
       a.classList.toggle('active', h === name || h === `${name}/${arg}` || (name === 'topic' && byId[arg] && h === 'module/' + byId[arg].module));
@@ -288,6 +291,7 @@
           </div>
           ${hasPlayable ? `<div class="card"><h3>Practise in any key</h3>${keyChooser()}<label class="small muted row" style="margin-top:10px">Tempo <input type="range" id="tempo" min="50" max="140" value="80"> <span id="tempo-v">80</span> bpm</label><label class="small muted row">Style <select id="style"><option value="block">Block</option><option value="broken">Broken</option><option value="arp">Arpeggio</option><option value="pad">Pad</option></select></label></div>` : ''}
           ${t.related && t.related.length ? `<div class="card"><h3>Related lessons</h3><div class="stack small">${t.related.filter((r) => byId[r]).map((r) => `<div><a href="#/topic/${r}">${esc(byId[r].title)}</a></div>`).join('')}</div></div>` : ''}
+          <div id="topic-hooks"></div>
           <div class="card"><h3>My teaching notes</h3><textarea id="notes" placeholder="Students, songs to use, what worked…">${esc(S.notes[id] || '')}</textarea></div>
         </aside>
       </div>`;
@@ -330,6 +334,7 @@
     }
     $$('.section table', view).forEach((tb) => { if (!tb.parentElement.classList.contains('table-wrap')) { const w = document.createElement('div'); w.className = 'table-wrap'; tb.replaceWith(w); w.appendChild(tb); } });
     if (tools.length) mountTools($('#tool-mount'), tools);
+    topicHooks.forEach((fn) => { const d = document.createElement('div'); $('#topic-hooks').appendChild(d); fn(id, d); });
   }
 
   /* ---------------- Tools ---------------- */
@@ -347,7 +352,7 @@
   function keyboardTool(el) {
     el.innerHTML = `<h2>🎹 Interactive keyboard</h2>
       <p class="small muted">Play the keys, or build any chord or scale to see it highlighted.</p>
-      <div class="row"><input type="text" id="kb-chord" placeholder="Chord e.g. Gsus4, F#m7, C/E" style="width:200px"><button class="btn sm" id="kb-show">Show chord</button>
+      <div class="row"><input type="text" id="kb-chord" placeholder="Chord e.g. Gsus4, F#m7, C/E" style="width:200px"><button class="btn sm" id="kb-show">Show chord</button><button class="btn sm" id="kb-save" title="Start a chord library entry from this chord">＋ Save to library</button>
       <select id="kb-scale-root">${M.KEYS.map((k) => `<option>${k.name}</option>`).join('')}</select>
       <select id="kb-scale">${Object.entries(M.SCALES).map(([k, s]) => `<option value="${k}">${s.name}</option>`).join('')}</select><button class="btn sm" id="kb-scale-btn">Show scale</button></div>
       <div id="kb-info" class="small" style="margin:10px 0;min-height:1.4em"></div>
@@ -359,6 +364,11 @@
       const midis = M.playChord(ch);
       highlight(el, midis);
       $('#kb-info', el).innerHTML = `<b>${M.pretty(ch.symbol)}</b> — ${ch.type.name}: ${ch.notes.map(M.pretty).join(' – ')} <span class="muted">(formula ${ch.type.text})</span>`;
+    };
+    $('#kb-save', el).onclick = () => {
+      const sym = $('#kb-chord', el).value.trim();
+      if (!M.parseChord(sym)) { $('#kb-info', el).textContent = 'Type a chord first, e.g. Cadd9, then save it to your library.'; return; }
+      App.saveChordToLibrary && App.saveChordToLibrary(sym);
     };
     $('#kb-scale-btn', el).onclick = () => {
       const root = $('#kb-scale-root', el).value, id = $('#kb-scale', el).value;
@@ -918,6 +928,13 @@
   // Inside an embedded viewer, printing and file downloads are blocked — hide those buttons
   const embedded = (() => { try { return window.self !== window.top; } catch (e) { return true; } })();
   if (embedded) document.documentElement.classList.add('embedded');
+
+  // Shared helpers for feature modules (Chord Library)
+  const App = window.App = {
+    routes, topicHooks, view, $, $$, esc, toast, pianoHTML, bindPiano, highlight, keyChooser, bindKeyChooser, bindChips,
+    byId, modById, TOPICS, LEVEL_NAMES, lvlPill, state: S, save
+  };
+  if (window.LibraryModule) window.LibraryModule(App);
 
   route();
 })();

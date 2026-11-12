@@ -126,7 +126,7 @@
   }
 
   // Identify a chord from pitch classes (used by negative harmony etc.)
-  const ID_ORDER = ['', 'm', 'dim', 'aug', 'sus4', 'sus2', '7', 'maj7', 'm7', 'm6', '6', 'm7b5', 'dim7', 'mMaj7', '7sus4', 'aug7', 'add9', 'madd9'];
+  const ID_ORDER = ['', 'm', 'dim', 'aug', 'sus4', 'sus2', '7', 'maj7', 'm7', 'm6', '6', 'm7b5', 'dim7', 'mMaj7', '7sus4', 'aug7', 'add9', 'madd9', 'maj9', 'm9', '9', '69', '7b9', '7#9', 'm11', '13', '11'];
   function identify(pcs, flat, preferRoot) {
     const set = Array.from(new Set(pcs.map((p) => mod(p))));
     const roots = preferRoot !== undefined ? [preferRoot].concat(set) : set;
