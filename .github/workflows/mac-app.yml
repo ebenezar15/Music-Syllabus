@@ -1,0 +1,51 @@
+name: Build Riffbook for Mac
+
+on:
+  push:
+    branches: [main, claude/music-syllabus-organizer-nyuicg]
+    paths: ['desktop/**', 'riffbook/**', 'js/**', 'css/**', 'index.html', '.github/workflows/mac-app.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mac-app
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+      - name: Build the app (.dmg, Apple silicon + Intel)
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm run dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Riffbook-mac
+          path: desktop/dist/Riffbook-mac.dmg
+          if-no-files-found: error
+      - name: Publish to the "Riffbook for Mac" release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: riffbook-mac
+          name: Riffbook for Mac
+          body: |
+            Download **Riffbook-mac.dmg**, open it and drag Riffbook to Applications.
+
+            The app is not signed with an Apple developer certificate, so the first time you open it:
+            right-click (or Control-click) Riffbook in Applications → **Open** → **Open**.
+            If macOS still blocks it: System Settings → Privacy & Security → **Open Anyway**.
+
+            Rebuilt automatically from the latest code.
+          files: desktop/dist/Riffbook-mac.dmg
+          make_latest: true

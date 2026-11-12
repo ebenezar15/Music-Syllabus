@@ -42,6 +42,28 @@ A separate app: your personal notebook for **your own improvisations, chord move
 - **Starting notes:** templates (Improvisation, Chord movement, Hand placement, Lick, Song, Blank), and a **Quick idea** button that records audio straight into a new note.
 - **Shortcuts and data:** `N` makes a new note and `/` jumps to search. Back up and restore as a JSON file, recordings included. The same 9 colour schemes and Avenir Next typography as Syllabus Studio.
 
+### Where to run Riffbook
+
+| Way | MIDI keyboard | How |
+|---|---|---|
+| **Website (GitHub Pages)** | ✅ in Chrome or Edge | `https://<your-user>.github.io/Music-Syllabus/riffbook/`, deployed automatically by `.github/workflows/pages.yml` on every push. |
+| **Installed web app** | ✅ | Open the website in Chrome and choose the install icon in the address bar (or ⋮ → Cast, save and share → Install). Riffbook gets its own Dock icon and window, and works offline. |
+| **Mac app** | ✅ | Download `Riffbook-mac.dmg` from the repository's **Releases** page ("Riffbook for Mac"). It is built by `.github/workflows/mac-app.yml` on a GitHub Mac runner, for Apple silicon and Intel. The app isn't signed with an Apple developer certificate, so the first time you open it: right-click → Open → Open. |
+| **Claude artifact** | ❌ blocked by the viewer | Computer keys and on-screen keys only. |
+
+Each of these keeps its own copy of your notes. Use **Back up** and **Restore** to move them from one to another.
+
+To build the Mac app yourself: `cd desktop && npm install && npm run dist` (on a Mac). `npm start` runs it without packaging.
+
+### What makes it different
+
+- **Rewind:** once a MIDI keyboard is connected, Riffbook is always listening and keeps the last 5 minutes. When you play something good, press **30 s**, **2 min** or **5 min**. That stretch becomes a note with a piano roll and the chords already named.
+- **12-key drill:** press **⟳ 12 keys** on any chord progression. It walks you round the circle of 4ths and listens. When it hears the right chord, in any voicing, it moves on, and at the end it logs the practice. Without MIDI, press Space to step through.
+- **Find by playing:** press **🎹 Find by playing**, hold a chord, and let go. You see every note in your library that uses it.
+- **Number view:** the **1 4 5** button shows every chord as its Nashville number in the note's key, so `Am G/B C` becomes `6m 5/7 1`.
+- **MIDI file export:** **⬇ .mid** on any take saves a standard MIDI file you can drag into Logic, GarageBand or any DAW.
+- **App sound switch:** turn the app's own piano sound off if your keyboard already makes sound.
+
 ### Capturing from your MIDI keyboard
 
 Plug a USB/Bluetooth MIDI keyboard into your computer, open the app from this repository in **Chrome or Edge**, and either click **🎹 MIDI capture** in Riffbook or **Connect MIDI keyboard** in the Chord Library editor. Then:

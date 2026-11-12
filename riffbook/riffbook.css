@@ -248,3 +248,21 @@ body.note-open .rb-list { display: none; }
   .composer { grid-template-columns: 1fr; }
   .tree-add { opacity: .6; }
 }
+
+/* ===== MIDI panel, drill, extras ===== */
+.midi-panel { margin: 4px 0 8px; padding: 10px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+.rec-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--t); margin-right: 4px; animation: pulse 1.6s infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .rec-dot { animation: none; } }
+.rw-btns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.rw-btns button { border: 1px solid var(--line); background: var(--surface-2); border-radius: 8px; padding: 6px 0; cursor: pointer; font-weight: 700; font-size: .82rem; }
+.rw-btns button:hover { border-color: var(--accent); color: var(--accent); }
+.btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.dr-keys { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 18px 0 8px; }
+.dr-key { min-width: 38px; text-align: center; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line); font-weight: 700; font-size: .85rem; color: var(--muted); }
+.dr-key.done { background: var(--t); color: #fff; border-color: transparent; }
+.dr-key.now { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.dr-now { text-align: center; font-size: 1.6rem; margin: 10px 0; }
+.dr-status { text-align: center; min-height: 1.5em; font-weight: 600; }
+.pm-chips .chip small { display: block; font-size: .65rem; font-weight: 500; opacity: .7; }
+.pm-chips .chip.hit { opacity: .45; }

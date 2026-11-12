@@ -25,7 +25,7 @@
   const PREF_KEY = 'riffbook-ui-v2';
   const ui = { theme: 'midnight', list: 'home', topic: '', tag: '', type: '', q: '', sort: 'updated', selected: null, viewKey: null, collapsed: [], lastKey: 'C' };
   try { Object.assign(ui, JSON.parse(localStorage.getItem(PREF_KEY) || '{}')); } catch (e) { /* ignore */ }
-  const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify({ ...ui, viewKey: null })); } catch (e) { /* ignore */ } };
+  const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify({ ...ui, viewKey: null, findChord: null, q: '' })); } catch (e) { /* ignore */ } };
 
   const toast = (msg) => { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 1800); };
 
@@ -241,7 +241,7 @@
     const semis = viewShift(n);
     const inline = (s) => esc(s)
       .replace(/\[\[([^\]]+)\]\]/g, (m, t) => { const target = Store.all().find((x) => x.title.toLowerCase() === t.trim().toLowerCase()); return target ? `<a href="#" class="wikilink" data-open="${esc(target.id)}">${esc(t)}</a>` : `<span class="wikilink missing" title="No note with this title yet">${esc(t)}</span>`; })
-      .replace(/\[([A-G][#b]?[^\]\s]{0,10})\]/g, (m, c) => (M.parseChord(c) ? `<button class="chip inline" data-chord="${esc(tr(c, semis, ui.viewKey))}">${esc(M.pretty(tr(c, semis, ui.viewKey)))}</button>` : m))
+      .replace(/\[([A-G][#b]?[^\]\s]{0,10})\]/g, (m, c) => (M.parseChord(c) ? `<button class="chip inline" data-chord="${esc(tr(c, semis, ui.viewKey))}">${esc(chordLabel(c, n, semis))}</button>` : m))
       .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/\*([^*]+)\*/g, '<i>$1</i>').replace(/`([^`]+)`/g, '<code>$1</code>');
     const out = []; let list = null;
     (text || '').split('\n').forEach((line) => {
@@ -318,11 +318,11 @@
     review: { label: 'Revisit', icon: '↻', test: needsReview, hint: 'Not practised for over a week' },
     mastered: { label: 'Mastered', icon: '✓', test: (n) => n.status === 'mastered' }
   };
-  const isHome = () => !ui.topic && ui.list === 'home' && !ui.tag && !ui.type && !ui.q.trim();
+  const isHome = () => !ui.topic && ui.list === 'home' && !ui.tag && !ui.type && !ui.q.trim() && !ui.findChord;
   function filtered() {
     const q = ui.q.trim().toLowerCase();
     const list = Store.all().filter((n) => (SMART[ui.list] || SMART.all).test(n) &&
-      (q || !ui.topic || inTopic(n, ui.topic)) && (!ui.tag || (n.tags || []).includes(ui.tag)) && (!ui.type || n.type === ui.type) &&
+      (q || !ui.topic || inTopic(n, ui.topic)) && (!ui.tag || (n.tags || []).includes(ui.tag)) && (!ui.type || n.type === ui.type) && (!ui.findChord || noteHasChord(n, ui.findChord.key)) &&
       (!q || [n.title, n.body, topicOf(n), (n.tags || []).join(' '), (n.comments || []).map((c) => c.text).join(' '), (n.blocks || []).map((b) => (b.label || '') + ' ' + (b.prog || '') + ' ' + (b.symbol || '')).join(' ')].join(' ').toLowerCase().includes(q)));
     const sorters = {
       updated: (a, b) => (b.updated || 0) - (a.updated || 0),
@@ -335,7 +335,7 @@
   }
   const go = (patch) => {
     flush();
-    Object.assign(ui, { topic: '', tag: '', type: '', q: '', list: 'all' }, patch);
+    Object.assign(ui, { topic: '', tag: '', type: '', q: '', list: 'all', findChord: null }, patch);
     topicEdit = null; railAdding = null;
     document.body.classList.remove('note-open', 'rail-open');
     savePrefs(); renderRail(); renderList();
@@ -368,6 +368,13 @@
         <button class="btn primary" id="new-note">＋ New note</button>
         <div class="rail-two"><button class="btn sm" id="quick-audio" title="Record an audio idea straight into a new note">🎙 Idea</button>
         <button class="btn sm" id="midi-capture" title="Record what you play on your MIDI keyboard into a new note — chords are named for you">🎹 MIDI</button></div>
+      </div>
+      <div class="midi-panel">${midiState.connected
+        ? `<div class="spread small"><span><span class="rec-dot"></span> Listening</span><span class="muted" id="rw-count">${rewind.notes.length} notes kept</span></div>
+           <div class="small muted" style="padding:0">Played something good? Save the last…</div>
+           <div class="rw-btns"><button data-rw="30">30 s</button><button data-rw="120">2 min</button><button data-rw="300">5 min</button></div>`
+        : `<button class="btn sm" id="midi-connect" style="width:100%;justify-content:center">🎹 Connect MIDI keyboard</button>`}
+        <label class="small row" style="gap:6px;margin-top:6px"><input type="checkbox" id="app-sound" ${ui.sound !== false ? 'checked' : ''} style="width:15px;height:15px"> App plays sound when I play</label>
       </div>
       ${item('data-home="1"', isHome(), '⌂', 'Library home', null)}
       ${item('data-list="all"', plain && ui.list === 'all' && !isHome(), '▤', 'All notes', all.length)}
@@ -407,6 +414,9 @@
     $('#new-note').onclick = () => openTemplates();
     $('#quick-audio').onclick = quickAudio;
     $('#midi-capture').onclick = midiCapture;
+    if ($('#midi-connect')) $('#midi-connect').onclick = () => connectMidi();
+    $$('[data-rw]', rail).forEach((b) => b.onclick = () => saveRewind(+b.dataset.rw));
+    $('#app-sound').onchange = (e) => { ui.sound = e.target.checked; savePrefs(); };
     if ($('#backup')) { $('#backup').onclick = backup; $('#restore').onchange = (e) => restore(e.target.files[0]); }
   }
   function heatmap(all) {
@@ -444,7 +454,7 @@
         <span class="nc-flags">${n.pinned ? '📌' : ''}<button class="star-btn ${n.favourite ? 'on' : ''}" data-star="${esc(n.id)}" aria-label="Favourite" aria-pressed="${!!n.favourite}">★</button></span></div>
       <h3>${esc(n.title || 'Untitled')}</h3>
       ${snippet ? `<p>${esc(snippet)}</p>` : ''}
-      ${chords.length ? `<div class="nc-chords"><button class="play-dot" data-playcard="${esc(n.id)}" aria-label="Play these chords">▶</button><div class="chips">${chords.map((c) => `<button class="chip" data-chord="${esc(c)}">${esc(M.pretty(c))}</button>`).join('')}</div></div>` : ''}
+      ${chords.length ? `<div class="nc-chords"><button class="play-dot" data-playcard="${esc(n.id)}" aria-label="Play these chords">▶</button><div class="chips">${chords.map((c) => `<button class="chip" data-chord="${esc(c)}">${esc(chordLabel(c, n, 0))}</button>`).join('')}</div></div>` : ''}
       ${place ? `<div class="nc-kb">${U.voicingSVG(place, { w: 11, h: 40, labels: false })}</div>` : ''}
       <div class="nr-meta">${n.key ? `<span>Key ${esc(M.pretty(n.key))}</span>` : ''}<span class="st st-${n.status || 'idea'}">${STATUS[n.status || 'idea']}</span>${has('roll') ? '<span title="Piano-roll take">▦</span>' : ''}${has('audio') ? '<span title="Recording">🎙</span>' : ''}${(n.comments || []).length ? `<span>💬 ${n.comments.length}</span>` : ''}<span>${ago(n.updated)}</span>${needsReview(n) ? '<span class="due">↻ revisit</span>' : ''}</div>
     </article>`;
@@ -470,6 +480,8 @@
     const bar = `<div class="lib-bar">
         <button class="icon-btn mobile-only" id="menu-btn" aria-label="Open menu">☰</button>
         <input type="search" id="q" placeholder="Search your library — titles, chords, comments…" value="${esc(ui.q)}" aria-label="Search your library">
+        <button class="btn ${finder.on ? 'primary' : ''}" id="find-play" title="Hold a chord on your keyboard to find every note that uses it">${finder.on ? '🎹 Listening…' : '🎹 Find by playing'}</button>
+        <button class="btn" id="num-toggle" aria-pressed="${!!ui.numbers}" title="Show chords as numbers (1 4 5)">${ui.numbers ? 'C F G' : '1 4 5'}</button>
         <button class="btn" id="inspire" title="Open a random note${ui.topic ? ' from this topic' : ''}">🎲 Inspire me</button>
         <button class="btn primary" id="bar-new">＋ New note</button>
       </div>${Store.note ? `<div class="small" style="color:var(--d);margin-bottom:8px">${esc(Store.note)}</div>` : ''}`;
@@ -490,7 +502,7 @@
       const list = filtered();
       const kids = ui.topic && !ui.q.trim() ? childrenOf(ui.topic, paths) : [];
       const searching = !!ui.q.trim();
-      const title = searching ? 'Search results' : ui.topic ? leaf(ui.topic) : ui.tag ? '#' + ui.tag : (SMART[ui.list] || SMART.all).label;
+      const title = ui.findChord ? 'Notes using ' + M.pretty(ui.findChord.name) : searching ? 'Search results' : ui.topic ? leaf(ui.topic) : ui.tag ? '#' + ui.tag : (SMART[ui.list] || SMART.all).label;
       const crumbs = ['<a href="#" data-home="1">Library</a>'].concat(ui.topic && !searching ? ui.topic.split('/').map((seg, i, arr) => (i === arr.length - 1 ? `<span>${esc(seg)}</span>` : `<a href="#" data-topic="${esc(arr.slice(0, i + 1).join('/'))}">${esc(seg)}</a>`)) : [`<span>${esc(title)}</span>`]).join(' <span class="sep">›</span> ');
       const typesHere = Object.keys(TYPES).filter((k) => Store.all().some((n) => n.type === k && (!ui.topic || inTopic(n, ui.topic))));
       html = `<nav class="crumbs" aria-label="Breadcrumb">${crumbs}</nav>
@@ -500,7 +512,8 @@
           ${topicEdit === 'sub' ? `<form id="t-subform" class="row" style="margin-top:8px"><input type="text" id="t-subname" placeholder="New topic inside ${esc(leaf(ui.topic))}, e.g. 6-1" aria-label="Subtopic name"><button class="btn sm primary" type="submit">Add</button><button class="btn sm ghost" type="button" id="t-cancel">Cancel</button></form>` : ''}
           ${kids.length ? `<div class="subtopics">${kids.map((k) => `<button class="subchip" data-topic="${esc(k)}">${esc(leaf(k))} <b>${countIn(k)}</b></button>`).join('')}</div>` : ''}
         </header>
-        ${ui.list === 'all' && !ui.q.trim() && !ui.tag ? `<form id="qa" class="composer">
+        ${ui.findChord ? `<p class="muted">Every note in your library with this chord in its progressions, text or placements. <button class="btn sm" id="find-clear">Clear</button></p>` : ''}
+        ${ui.list === 'all' && !ui.q.trim() && !ui.tag && !ui.findChord ? `<form id="qa" class="composer">
           <input type="text" id="qa-title" placeholder="${ui.topic ? 'Add to ' + esc(leaf(ui.topic)) + ' — name the idea…' : 'Add a note — name the idea…'}" aria-label="Note title">
           <input type="text" id="qa-chords" placeholder="Chords, if any — e.g. Am G/B C" aria-label="Chords">
           <textarea id="qa-body" rows="2" placeholder="What is it, where does it fit, how does it feel?" aria-label="Notes"></textarea>
@@ -516,6 +529,9 @@
     $('#menu-btn').onclick = () => document.body.classList.add('rail-open');
     $('#q').oninput = (e) => { ui.q = e.target.value; if (ui.list === 'home') ui.list = 'all'; savePrefs(); renderList(); const q = $('#q'); q.focus(); q.setSelectionRange(ui.q.length, ui.q.length); };
     $('#bar-new').onclick = () => openTemplates();
+    $('#find-play').onclick = toggleFinder;
+    $('#num-toggle').onclick = () => { ui.numbers = !ui.numbers; savePrefs(); renderList(); };
+    if ($('#find-clear')) $('#find-clear').onclick = () => go({ list: 'all' });
     $('#inspire').onclick = () => { const pool = ui.topic ? Store.all().filter((n) => inTopic(n, ui.topic)) : Store.all(); const n = pickRandom(pool.length ? pool : Store.all(), ui.selected); if (n) select(n.id); else toast('Add a note first'); };
     $$('[data-home]', pane).forEach((a) => a.onclick = (e) => { e.preventDefault(); go({ list: 'home' }); });
     $$('[data-topic]', pane).forEach((a) => a.onclick = (e) => { e.preventDefault(); go({ topic: a.dataset.topic }); });
@@ -616,7 +632,7 @@
         <label id="m-newtopic-wrap" hidden>New topic <input type="text" id="m-newtopic" placeholder="e.g. Movements/6-1"></label>
         <label class="grow">Tags <input type="text" id="m-tags" value="${esc((n.tags || []).join(', '))}" placeholder="gospel, interlude, ending"></label>
       </div>
-      ${n.key ? `<div class="transpose-bar"><span class="small muted">View in key</span><div class="keybar">${M.KEYS.map((k) => `<button data-vk="${k.name}" class="${(ui.viewKey || n.key) === k.name ? 'on' : ''}">${M.pretty(k.name)}</button>`).join('')}</div>${semis ? `<button class="btn sm" id="apply-key">Make ${M.pretty(ui.viewKey)} the note's key</button>` : ''}</div>` : ''}
+      ${n.key ? `<div class="transpose-bar"><span class="small muted">View in key</span><div class="keybar">${M.KEYS.map((k) => `<button data-vk="${k.name}" class="${(ui.viewKey || n.key) === k.name ? 'on' : ''}">${M.pretty(k.name)}</button>`).join('')}</div><button class="btn sm ghost" id="ed-num" aria-pressed="${!!ui.numbers}">${ui.numbers ? 'Show letters' : 'Show numbers'}</button>${semis ? `<button class="btn sm" id="apply-key">Make ${M.pretty(ui.viewKey)} the note's key</button>` : ''}</div>` : ''}
 
       <section class="body-sec">
         <div class="spread"><h3>Notes</h3><div class="seg"><button id="mode-read" aria-pressed="${!n._editBody}">Read</button><button id="mode-write" aria-pressed="${!!n._editBody}">Write</button></div></div>
@@ -676,12 +692,12 @@
     const foot = comments ? `<div class="small muted blk-foot">💬 ${comments} comment${comments > 1 ? 's' : ''}</div>` : '';
     let body = '';
     if (b.kind === 'chords') {
-      const chips = (b.prog || '').trim().split(/\s+/).filter(Boolean).map((c) => (c === '|' ? '<span class="chip bar">|</span>' : `<button class="chip" data-chord="${esc(tr(c, semis, ui.viewKey))}">${esc(M.pretty(tr(c, semis, ui.viewKey)))}</button>`)).join('');
+      const chips = (b.prog || '').trim().split(/\s+/).filter(Boolean).map((c) => (c === '|' ? '<span class="chip bar">|</span>' : `<button class="chip" data-chord="${esc(tr(c, semis, ui.viewKey))}">${esc(chordLabel(c, n, semis))}</button>`)).join('');
       body = `<div class="chips">${chips || '<span class="small muted">Type chords below.</span>'}</div>
         <div class="row small" style="margin-top:8px"><input type="text" data-prog="${i}" value="${esc(b.prog || '')}" placeholder="C G/B Am7 Fmaj9" style="flex:1;min-width:160px" aria-label="Chords">
         <label>Beats <select data-beats="${i}">${[1, 2, 4, 8].map((x) => `<option ${x === (b.beats || 4) ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
         <select data-style="${i}" aria-label="Style"><option value="block">Block</option><option value="broken">Broken</option><option value="arp">Arpeggio</option><option value="pad">Pad</option></select>
-        <button class="btn sm" data-playprog="${i}">▶ Play</button></div>`;
+        <button class="btn sm" data-playprog="${i}">▶ Play</button><button class="btn sm" data-drill="${i}" title="Practise this in all 12 keys — it listens and moves on when you play each chord">⟳ 12 keys</button></div>`;
     } else if (b.kind === 'placement') {
       const lh = (b.lh || []).map((m) => m + semis), rh = (b.rh || []).map((m) => m + semis);
       const fingers = {}; Object.entries(b.fingers || {}).forEach(([m, f]) => { fingers[+m + semis] = f; });
@@ -701,7 +717,7 @@
       const recording = rollRec.block === b.id;
       const segs = recording ? [] : U.segmentChords(shown.events, { flat: keyFlat(ui.viewKey || n.key || 'C') });
       body = `${recording ? `<div class="live-chord" data-live="${i}" aria-live="polite">${esc(rollRec.live || (rollRec.rec && rollRec.rec.armed ? 'Waiting — start playing' : 'Play…'))}</div>` : ''}${U.rollSVG(shown, { row: 7, ppb: 28, segments: segs })}
-        <div class="row small" style="margin-top:8px"><button class="btn sm" data-playroll="${i}" ${roll.events.length ? '' : 'disabled'}>▶ Play</button>
+        <div class="row small" style="margin-top:8px"><button class="btn sm" data-playroll="${i}" ${roll.events.length ? '' : 'disabled'}>▶ Play</button>${roll.events.length ? `<button class="btn sm ghost print-only" data-mid="${i}" title="Save this take as a MIDI file for your DAW">⬇ .mid</button>` : ''}
         <button class="btn sm" data-recroll="${i}">${rollRec.block === b.id ? '■ Stop' : '● Record a take'}</button>
         <label>Tempo <input type="number" data-rollbpm="${i}" value="${roll.bpm || n.bpm || 80}" min="40" max="220" style="width:64px"></label>
         <label>Quantise <select data-rollq="${i}"><option value="0">Off</option><option value="0.25">1/16</option><option value="0.5" selected>1/8</option></select></label>
@@ -771,6 +787,7 @@
       Store.remove(id).then(() => { toast('Note deleted'); document.body.classList.remove('note-open'); renderRail(); renderList(); });
     };
     $$('[data-vk]').forEach((b) => b.onclick = () => { ui.viewKey = b.dataset.vk === n.key ? null : b.dataset.vk; renderEditor(); });
+    if ($('#ed-num')) $('#ed-num').onclick = () => { ui.numbers = !ui.numbers; savePrefs(); renderEditor(); };
     if ($('#apply-key')) $('#apply-key').onclick = () => {
       const s = viewShift(n), to = ui.viewKey, fl = keyFlat(to);
       n.blocks.forEach((b) => {
@@ -820,6 +837,8 @@
       const i = +x.dataset.playprog, el = x.closest('.blk'), chips = $$('.chip[data-chord]', el);
       M.playProgression(chips.map((c) => c.dataset.chord), { bpm: n.bpm || 80, beats: B(i).beats || 4, style: $(`[data-style="${i}"]`).value, onStep: (k) => chips.forEach((c, j) => c.classList.toggle('on', j === k)), onEnd: () => chips.forEach((c) => c.classList.remove('on')) });
     });
+    $$('[data-drill]').forEach((x) => x.onclick = () => startDrill(n, B(x.dataset.drill)));
+    $$('[data-mid]').forEach((x) => x.onclick = () => downloadMidi(n, B(x.dataset.mid)));
     // placement
     $$('[data-hand]').forEach((x) => x.onclick = () => { placeTool.hand = x.dataset.hand; $$('[data-hand]').forEach((y) => y.setAttribute('aria-pressed', String(y.dataset.hand === placeTool.hand))); });
     $$('[data-finger]').forEach((x) => x.onclick = () => { placeTool.finger = x.dataset.finger; $$('[data-finger]').forEach((y) => y.setAttribute('aria-pressed', String(y.dataset.finger === placeTool.finger))); });
@@ -923,25 +942,30 @@
     const top = $('#live-top'); if (top) { top.textContent = name ? '🎹 ' + name : ''; top.hidden = !name; }
   }
   function liveOn(m, v) {
-    if (!midiState.quiet) M.tone(m, 0, 1.0, { vel: 0.08 + v / 700 });
+    if (ui.sound !== false) M.tone(m, 0, 1.0, { vel: 0.08 + v / 700 });
     if (rollRec.rec) rollRec.rec.noteOn(m, v);
+    rwOn(m, v);
     live.held.add(m); live.sustained.delete(m); live.grabbed.add(m);
+    if (drill.on) drill.check();
     const k = $(`.mini-input rect[data-m="${m}"]`); if (k) k.style.filter = 'brightness(.75)';
     showLive();
   }
   function liveOff(m) {
     if (rollRec.rec) rollRec.rec.noteOff(m);
+    rwOff(m);
     live.held.delete(m);
     if (live.pedal) live.sustained.add(m);
     const k = $(`.mini-input rect[data-m="${m}"]`); if (k) k.style.filter = '';
     if (!live.held.size) {
-      if (grab.block && live.grabbed.size > 1) applyGrab(Array.from(live.grabbed));
+      if (finder.on && live.grabbed.size > 1) finishFinder(Array.from(live.grabbed));
+      else if (grab.block && live.grabbed.size > 1) applyGrab(Array.from(live.grabbed));
       live.grabbed.clear();
     }
     showLive();
   }
   function livePedal(down) {
     live.pedal = down;
+    rwPedal(down);
     if (rollRec.rec) rollRec.rec.pedal(down);
     if (!down) live.sustained.clear();
     showLive();
@@ -961,14 +985,17 @@
     markDirty(true);
   }
   function ensureInput() {
-    if (!rollRec.input) rollRec.input = U.noteInput({ on: liveOn, off: liveOff, pedal: livePedal, octave: (o) => toast('Octave ' + o), midiChange: (names) => { midiState.connected = names.length > 0; } }, { enabled: () => !!rollRec.block || !!grab.block });
+    if (!rollRec.input) rollRec.input = U.noteInput({ on: liveOn, off: liveOff, pedal: livePedal, octave: (o) => toast('Octave ' + o), midiChange: (names) => { midiState.connected = names.length > 0; renderRail(); } }, { enabled: () => !!rollRec.block || !!grab.block || finder.on || drill.on });
   }
+  let silentMidi = false;
   async function connectMidi() {
     ensureInput();
     const r = await rollRec.input.connectMidi();
     midiState.connected = r.ok && !/No MIDI/.test(r.message);
     midiState.message = r.message;
-    toast(r.message);
+    if (midiState.connected) { ui.midiAuto = true; savePrefs(); }
+    if (!silentMidi) toast(r.message);
+    renderRail();
     return r;
   }
   function toggleRollRecord(n, b, i, forceFree) {
@@ -1054,6 +1081,159 @@
     select(n.id);
     toggleRollRecord(n, b, 0, true);
     if (!r.ok || !midiState.connected) toast('No MIDI keyboard found — you can play on the computer keys (A S D F…)');
+  }
+
+  /* ======================= Rewind: always listening, save what you just played ======================= */
+  const KEEP_MS = 5 * 60 * 1000;
+  const rewind = { notes: [], open: new Map(), sustained: new Set(), pedal: false };
+  function rwEnd(m) {
+    const a = rewind.open.get(m); if (!a) return;
+    rewind.open.delete(m); rewind.sustained.delete(m);
+    a.off = performance.now(); rewind.notes.push(a);
+    const cut = a.off - KEEP_MS;
+    while (rewind.notes.length && rewind.notes[0].off < cut) rewind.notes.shift();
+    const el = $('#rw-count'); if (el) el.textContent = rewind.notes.length + ' notes kept';
+  }
+  function rwOn(m, v) { if (rewind.open.has(m)) rwEnd(m); rewind.open.set(m, { m, on: performance.now(), v }); }
+  function rwOff(m) { if (rewind.pedal && rewind.open.has(m)) rewind.sustained.add(m); else rwEnd(m); }
+  function rwPedal(down) { rewind.pedal = down; if (!down) Array.from(rewind.sustained).forEach(rwEnd); }
+  async function saveRewind(seconds) {
+    const now = performance.now(), from = now - seconds * 1000;
+    const raw = rewind.notes.concat(Array.from(rewind.open.values()).map((a) => ({ ...a, off: now }))).filter((a) => a.off > from);
+    if (!raw.length) { toast('Nothing played in the last ' + (seconds < 60 ? seconds + ' seconds' : seconds / 60 + ' minutes')); return; }
+    const bpm = 80, t0 = Math.max(from, Math.min(...raw.map((a) => a.on)));
+    const events = raw.map((a) => ({ m: a.m, v: a.v || 90, t: +(Math.max(0, a.on - t0) / 1000 * bpm / 60).toFixed(3), d: +Math.max(0.05, (a.off - Math.max(a.on, t0)) / 1000 * bpm / 60).toFixed(3) }));
+    const n = newNote(ui.topic ? typeForTopic(ui.topic) : 'improv');
+    n.title = 'Played ' + new Date().toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    n.bpm = bpm;
+    n.blocks = [{ id: uid('b'), kind: 'roll', label: 'What I played', roll: { bpm, events, recorded: Date.now() } }];
+    const segs = U.segmentChords(events, { flat: keyFlat(n.key) }).filter((sg) => sg.name && M.parseChord(sg.name));
+    if (segs.length > 1) n.blocks.push({ id: uid('b'), kind: 'chords', label: 'Chords I played', prog: segs.map((sg) => sg.name).join(' '), beats: 2 });
+    await Store.add(n);
+    select(n.id);
+    toast('Saved ' + events.length + ' notes from the last ' + (seconds < 60 ? seconds + ' s' : seconds / 60 + ' min'));
+  }
+
+  /* ======================= Find by playing ======================= */
+  const finder = { on: false };
+  const pcsKey = (pcs) => Array.from(new Set(pcs.map((p) => M.mod(p)))).sort((a, b) => a - b).join(',');
+  const symKey = (sym) => { const ch = M.parseChord(sym); return ch ? pcsKey(ch.pcs) : ''; };
+  function noteChordSyms(n) {
+    const out = bodyChords(n);
+    (n.blocks || []).forEach((b) => {
+      if (b.kind === 'chords') out.push(...(b.prog || '').split(/\s+/).filter((c) => c && c !== '|'));
+      if (b.kind === 'placement') { if (b.symbol) out.push(b.symbol); }
+    });
+    return out;
+  }
+  function noteHasChord(n, key) {
+    if (noteChordSyms(n).some((c) => symKey(c) === key)) return true;
+    return (n.blocks || []).some((b) => b.kind === 'placement' && pcsKey((b.lh || []).concat(b.rh || [])) === key);
+  }
+  async function toggleFinder() {
+    if (finder.on) { finder.on = false; renderList(); return; }
+    ensureInput();
+    if (!midiState.connected && navigator.requestMIDIAccess && !embedded) await connectMidi();
+    finder.on = true; live.grabbed.clear();
+    renderList();
+    toast('Hold a chord, then let go');
+  }
+  function finishFinder(notes) {
+    finder.on = false;
+    const name = U.detectName(notes, liveFlat());
+    const key = pcsKey(notes);
+    go({ list: 'all', findChord: { key, name: name || notes.slice().sort((a, b) => a - b).map((m) => M.nameOf(m % 12, liveFlat())).join(' ') } });
+  }
+
+  /* ======================= Number view (Nashville numbers) ======================= */
+  const DEG = ['1', '♭2', '2', '♭3', '3', '4', '♯4', '5', '♭6', '6', '♭7', '7'];
+  function toNumber(sym, key) {
+    const ch = M.parseChord(sym); if (!ch) return M.pretty(sym);
+    const k = M.KEYS[keyIdx(key)].pc;
+    return DEG[M.mod(M.pcOf(ch.root) - k)] + M.pretty(ch.suffix) + (ch.bass ? '/' + DEG[M.mod(M.pcOf(ch.bass) - k)] : '');
+  }
+  const chordLabel = (c, n, semis) => (ui.numbers && n && n.key ? toNumber(c, n.key) : M.pretty(tr(c, semis || 0, ui.viewKey)));
+
+  /* ======================= Export a take as a MIDI file ======================= */
+  function midiFile(roll) {
+    const tpq = 480, ev = [];
+    (roll.events || []).forEach((e) => { ev.push([Math.round(e.t * tpq), 0x90, e.m, Math.max(1, Math.min(127, e.v || 90))]); ev.push([Math.round((e.t + e.d) * tpq), 0x80, e.m, 0]); });
+    ev.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const vlq = (n) => { const out = [n & 0x7f]; while ((n >>= 7)) out.unshift((n & 0x7f) | 0x80); return out; };
+    const us = Math.round(60000000 / (roll.bpm || 80));
+    const trk = [0, 0xff, 0x51, 3, (us >> 16) & 255, (us >> 8) & 255, us & 255];
+    let last = 0;
+    ev.forEach(([t, st, m, v]) => { trk.push(...vlq(t - last), st, m, v); last = t; });
+    trk.push(0, 0xff, 0x2f, 0);
+    const len = trk.length;
+    return new Uint8Array([0x4d, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 0, 0, 1, tpq >> 8, tpq & 255, 0x4d, 0x54, 0x72, 0x6b, (len >>> 24) & 255, (len >> 16) & 255, (len >> 8) & 255, len & 255].concat(trk));
+  }
+  function downloadMidi(n, b) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([midiFile(b.roll)], { type: 'audio/midi' }));
+    a.download = ((n.title || 'take') + (b.label ? ' - ' + b.label : '')).replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') + '.mid';
+    a.click(); toast('MIDI file saved');
+  }
+
+  /* ======================= 12-key drill: plays through every key and checks what you play ======================= */
+  const drill = { on: false };
+  function startDrill(n, b) {
+    const base = (b.prog || '').split(/\s+/).filter((c) => c && c !== '|' && M.parseChord(c));
+    if (!base.length) { toast('Add some chords first'); return; }
+    ensureInput();
+    const startPc = M.KEYS[keyIdx(n.key || 'C')].pc;
+    const keys = Array.from({ length: 12 }, (_, i) => M.KEYS.find((k) => k.pc === M.mod(startPc + i * 5)));
+    Object.assign(drill, { on: true, n, base, keys, ki: 0, ci: 0, start: Date.now(), hits: 0, skipped: 0 });
+    const ov = $('#practice'); ov.hidden = false;
+    const chordsIn = (ki) => { const k = drill.keys[ki]; let s = M.mod(k.pc - startPc); if (s > 6) s -= 12; return drill.base.map((c) => M.transposeChord(c, s, k.flat || k.pc === 0)); };
+    drill.chordsIn = chordsIn;
+    const draw = () => {
+      const k = drill.keys[drill.ki], cs = chordsIn(drill.ki), nextK = drill.keys[drill.ki + 1];
+      ov.innerHTML = `<div class="pm">
+        <div class="spread"><div><div class="small muted">12-key drill · circle of 4ths</div><h1 style="margin:4px 0">${esc(n.title || 'Untitled')}</h1></div><button class="btn" id="dr-close">Finish</button></div>
+        <div class="dr-keys">${drill.keys.map((x, i) => `<span class="dr-key ${i < drill.ki ? 'done' : i === drill.ki ? 'now' : ''}">${M.pretty(x.name)}</span>`).join('')}</div>
+        <div class="dr-now">Key of <b>${M.pretty(k.name)}</b> <span class="muted small">· ${drill.ki + 1} of 12</span></div>
+        <div class="chips pm-chips">${cs.map((c, i) => `<span class="chip ${i === drill.ci ? 'on' : i < drill.ci ? 'hit' : ''}">${esc(M.pretty(c))}<small>${esc(toNumber(drill.base[i], n.key || 'C'))}</small></span>`).join('')}</div>
+        <p class="dr-status" id="dr-status">${midiState.connected ? 'Play each chord — any voicing. It moves on when it hears the right notes.' : 'No MIDI keyboard connected: play it, then press Space (or tap Next).'}</p>
+        <div class="row" style="justify-content:center"><button class="btn" id="dr-hear">▶ Hear it</button><button class="btn primary" id="dr-next">Next chord</button><button class="btn ghost" id="dr-skip">Skip key</button>${midiState.connected ? '' : '<button class="btn ghost" id="dr-midi">🎹 Connect MIDI</button>'}</div>
+        ${nextK ? `<p class="small muted" style="text-align:center;margin-top:16px">Next key: ${M.pretty(nextK.name)} — ${chordsIn(drill.ki + 1).map(M.pretty).join('  ')}</p>` : '<p class="small muted" style="text-align:center;margin-top:16px">Last key!</p>'}
+      </div>`;
+      $('#dr-close').onclick = finish;
+      $('#dr-next').onclick = () => advance(false);
+      $('#dr-skip').onclick = () => { drill.skipped++; drill.ci = 0; drill.ki++; drill.ki >= 12 ? finish() : draw(); };
+      $('#dr-hear').onclick = () => M.playProgression(cs, { bpm: n.bpm || 80, beats: 2 });
+      if ($('#dr-midi')) $('#dr-midi').onclick = async () => { await connectMidi(); draw(); };
+    };
+    const advance = (heard) => {
+      if (heard) drill.hits++;
+      drill.ci++;
+      if (drill.ci >= drill.base.length) { drill.ci = 0; drill.ki++; if (drill.ki >= 12) { finish(); return; } M.click(M.audio().currentTime + 0.02, true); }
+      draw();
+    };
+    const onKey = (e) => { if (!drill.on) return; if (e.key === ' ' || e.key === 'ArrowRight') { e.preventDefault(); advance(false); } if (e.key === 'Escape') finish(); };
+    document.addEventListener('keydown', onKey);
+    function finish() {
+      document.removeEventListener('keydown', onKey);
+      drill.on = false; M.stopAll();
+      const mins = Math.max(1, Math.round((Date.now() - drill.start) / 60000));
+      const keysDone = Math.min(12, drill.ki) - drill.skipped;
+      ov.innerHTML = `<div class="pm"><h2>${keysDone >= 12 ? 'All 12 keys — done! 🎉' : 'Drill finished'}</h2><p>You played it in <b>${Math.max(0, keysDone)}</b> of 12 keys in about <b>${mins} min</b>${drill.hits ? `, with ${drill.hits} chords heard correctly` : ''}.</p>
+        <div class="row" style="margin-top:14px"><button class="btn primary" id="dr-log">Log this practice</button><button class="btn ghost" id="dr-nolog">Don't log</button></div></div>`;
+      $('#dr-log').onclick = () => { ov.hidden = true; logPractice(n, mins, n.bpm || null, `12-key drill: ${Math.max(0, keysDone)}/12 keys`); };
+      $('#dr-nolog').onclick = () => { ov.hidden = true; };
+    }
+    // called on every note-on while the drill runs
+    drill.check = () => {
+      const target = M.parseChord(chordsIn(drill.ki)[drill.ci]); if (!target) return;
+      const heldPcs = new Set([...live.held, ...live.sustained].map((m) => m % 12));
+      let need = Array.from(new Set(target.pcs.map((p) => M.mod(p))));
+      if (need.length >= 4) { const fifth = M.mod(M.pcOf(target.root) + 7); need = need.filter((p) => p !== fifth); } // the 5th may be left out of bigger chords
+      if (need.every((p) => heldPcs.has(p))) {
+        const st = $('#dr-status'); if (st) st.textContent = '✓ ' + M.pretty(target.symbol);
+        clearTimeout(drill.t); drill.t = setTimeout(() => advance(true), 350);
+      }
+    };
+    draw();
   }
 
   /* ---------- templates ---------- */
@@ -1186,7 +1366,7 @@
   }
   document.addEventListener('keydown', (e) => {
     if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName) || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (rollRec.block) return;
+    if (rollRec.block || drill.on || finder.on) return;
     if (e.key === 'n') { e.preventDefault(); openTemplates(); }
     if (e.key === '/') { e.preventDefault(); $('#q') && $('#q').focus(); }
     if (e.key === 'Escape') { if (!$('#templates').hidden) { $('#templates').hidden = true; return; } if (document.body.classList.contains('rail-open')) { document.body.classList.remove('rail-open'); return; } if (document.body.classList.contains('note-open')) closeNote(); }
@@ -1209,5 +1389,7 @@
     if (!document.body.classList.contains('note-open') && !($('#list-pane').contains(a) && /INPUT|TEXTAREA|SELECT/.test(a.tagName))) renderList();
   });
   Store.init();
+  if (ui.midiAuto && !embedded && navigator.requestMIDIAccess) { silentMidi = true; connectMidi().catch(() => {}).then(() => { silentMidi = false; }); }
+  if (!embedded && 'serviceWorker' in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(() => {});
   window.Riffbook = { exampleNotes, DEFAULT_TOPICS };
 })();

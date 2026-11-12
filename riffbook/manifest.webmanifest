@@ -1,0 +1,15 @@
+{
+  "name": "Riffbook",
+  "short_name": "Riffbook",
+  "description": "A personal musician's library: improvisations, chord movements and voicings, captured from your keyboard.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0e1424",
+  "theme_color": "#0e1424",
+  "categories": ["music", "productivity", "education"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
