@@ -22,8 +22,8 @@
   const THEMES = [['midnight', 'Midnight Keys', '#0e1424', '#f5c451'], ['sunrise', 'Sunrise', '#e8664a', '#f2a541'], ['ocean', 'Ocean', '#0e8fa3', '#36c2b4'], ['forest', 'Forest', '#3f7d3a', '#b8a046'], ['royal', 'Royal Worship', '#231b42', '#b388ff'], ['rose', 'Rose', '#c2577a', '#d9a066'], ['studio', 'Studio Mono', '#161616', '#ff5a36'], ['neon', 'Neon Groove', '#0b0b12', '#ff3ea5'], ['ember', 'Ember', '#2a1d19', '#ff8a3d']];
 
   /* ---------- per-browser UI preferences ---------- */
-  const PREF_KEY = 'riffbook-ui-v1';
-  const ui = { theme: 'midnight', list: 'all', notebook: '', tag: '', type: '', q: '', sort: 'updated', selected: null, viewKey: null };
+  const PREF_KEY = 'riffbook-ui-v2';
+  const ui = { theme: 'midnight', list: 'home', topic: '', tag: '', type: '', q: '', sort: 'updated', selected: null, viewKey: null, collapsed: [], lastKey: 'C' };
   try { Object.assign(ui, JSON.parse(localStorage.getItem(PREF_KEY) || '{}')); } catch (e) { /* ignore */ }
   const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify({ ...ui, viewKey: null })); } catch (e) { /* ignore */ } };
 
@@ -31,7 +31,7 @@
 
   /* ======================= Storage ======================= */
   const Store = (() => {
-    let mode = 'loading', cloud = null, assets = null, idbP = null, notes = [];
+    let mode = 'loading', cloud = null, assets = null, idbP = null, notes = [], topicList = null;
     const listeners = new Set();
     const urlCache = new Map();
     const emit = (remote) => listeners.forEach((f) => f(!!remote));
@@ -53,7 +53,10 @@
     }
     async function initLocal() {
       try {
-        notes = (await tx('notes', (s) => s.getAll())) || [];
+        const rows = (await tx('notes', (s) => s.getAll())) || [];
+        const meta = rows.find((r) => r.id === 'meta-topics');
+        topicList = meta ? meta.paths || [] : null;
+        notes = rows.filter((r) => String(r.id).startsWith('note-'));
         let seeded = false;
         try { seeded = localStorage.getItem('riffbook-seeded') === '1'; } catch (e) { /* ignore */ }
         if (!notes.length && !seeded) {
@@ -74,6 +77,8 @@
       const timer = setTimeout(() => { Store.note = 'Your notebook is taking a while to load — showing what is cached.'; emit(); }, 10000);
       cloud.onSnapshot((snap) => {
         if (!snap.metadata.fromCache) { clearTimeout(timer); Store.note = ''; }
+        const meta = snap.docs.find((d) => d.exists && d.id === 'meta-topics');
+        topicList = meta ? ((meta.data() || {}).paths || []).slice() : null;
         const fresh = snap.docs.filter((d) => d.exists && d.id.startsWith('note-')).map((d) => Object.assign(JSON.parse(JSON.stringify(d.data())), { id: d.id }));
         // Merge into the existing objects so the open note keeps its identity; never overwrite unsaved edits
         const have = new Map(notes.map((n) => [n.id, n]));
@@ -103,6 +108,13 @@
       get canUpload() { return mode === 'local' || (mode === 'cloud' && !!assets); },
       init, on: (f) => { listeners.add(f); return () => listeners.delete(f); },
       all: () => notes, get: (id) => notes.find((n) => n.id === id),
+      topics: () => topicList || DEFAULT_TOPICS,
+      async saveTopics(paths) {
+        topicList = Array.from(new Set(paths.filter(Boolean)));
+        if (mode === 'cloud') await cloud.doc('meta-topics').set({ paths: topicList });
+        else if (mode === 'local') await tx('notes', (s) => s.put({ id: 'meta-topics', paths: topicList }), true);
+        emit();
+      },
       add(n) { notes.push(n); return this.save(n); },
       async save(n) {
         n.updated = Date.now();
@@ -158,7 +170,18 @@
     [['C3', 0], ['G2', 4], ['A2', 8], ['F2', 12]].forEach(([n, t]) => improvRoll.events.push({ m: M.parseNote(n).midi, t, d: 3.8, v: 80 }));
     return [
       {
-        id: 'note-example-walkup', title: 'Gospel walk-up into the 4 chord', type: 'movement', notebook: 'Church band', tags: ['gospel', 'passing chords', 'example'],
+        id: 'note-example-6-1', title: '6 to 1 through 5/7', type: 'movement', topic: 'Movements/6-1', tags: ['worship', 'bass walk', 'example'],
+        key: 'C', bpm: 76, status: 'ready', pinned: false, favourite: true, created: now - 4 * DAY, updated: now - 3 * DAY,
+        body: 'Coming home from the **6 chord**: let the bass step up 6 – 7 – 1 with a slash chord in the middle: [Am] [G/B] [C]\n\n- RH can hold E and G the whole way; only the bass and one note move\n- Slower songs: stretch it to [Am7] [G/B] [Cadd9]\n- Works at the end of a bridge, landing on the chorus',
+        blocks: [
+          { id: 'b1', kind: 'chords', label: 'Basic', prog: 'Am G/B C', beats: 2 },
+          { id: 'b2', kind: 'chords', label: 'With colour', prog: 'Am7 G/B Cadd9', beats: 2 }
+        ],
+        comments: [{ id: 'c1', at: now - 3 * DAY, mood: 'works', text: 'Add the 4 before it for a full line: F – Am – G/B – C.' }],
+        practice: [log(4, 10, 70), log(3, 10, 76)], links: []
+      },
+      {
+        id: 'note-example-walkup', title: 'Gospel walk-up into the 4 chord', type: 'movement', topic: 'Passing chords/Diminished', tags: ['gospel', 'walk-up', 'example'],
         key: 'C', bpm: 72, status: 'practising', pinned: true, favourite: false, created: now - 20 * DAY, updated: now - 2 * DAY,
         body: '# The move\nGoing from **1 to 4**, walk the bass up chromatically and put a passing diminished chord on the way: [C] [C/E] [F] [F#dim7] [C/G] [A7] [Dm7] [G7sus4] [G7] [C]\n\n- Keep the RH on top of the chord and move the *inner voices* only\n- The F#dim7 is the magic: every note leans into C/G\n- Use it at the end of a verse before the chorus lift\n\nRelated: [[Right-hand placement for add9 pads]]',
         blocks: [
@@ -173,7 +196,7 @@
         links: []
       },
       {
-        id: 'note-example-improv', title: 'Pentatonic improv over 1-5-6-4', type: 'improv', notebook: 'Improvisation', tags: ['pentatonic', 'interlude', 'example'],
+        id: 'note-example-improv', title: 'Pentatonic improv over 1-5-6-4', type: 'improv', topic: 'Improvisation', tags: ['pentatonic', 'interlude', 'example'],
         key: 'C', bpm: 84, status: 'idea', pinned: false, favourite: true, created: now - 6 * DAY, updated: now - 1 * DAY,
         body: 'Captured this while vamping. The **C major pentatonic** (C D E G A) never clashes with any chord in the loop.\n\n- Phrase 1 answers itself: down, then back up\n- Land on the **3rd of each chord** on beat 1 (E over C, B over G, C over Am, A over F)\n- Leave space! Bar 4 is mostly a held note',
         blocks: [
@@ -186,7 +209,7 @@
         links: []
       },
       {
-        id: 'note-example-placement', title: 'Right-hand placement for add9 pads', type: 'placement', notebook: 'Church band', tags: ['pads', 'worship', 'example'],
+        id: 'note-example-placement', title: 'Right-hand placement for add9 pads', type: 'placement', topic: 'Voicings/Open', tags: ['pads', 'worship', 'example'],
         key: 'C', bpm: 64, status: 'ready', pinned: false, favourite: false, created: now - 30 * DAY, updated: now - 12 * DAY,
         body: 'The RH stays in **one place** while the LH changes root. Thumb on the 2nd, 2 on the 3rd, 4 on the 5th. Common tones are the secret.\n\n[Cadd9] [G/B] [Am7] [Fmaj9]',
         blocks: [
@@ -233,6 +256,59 @@
     return out.join('') || '<p class="muted">Nothing written yet. Tap to write.</p>';
   }
 
+  /* ======================= Topics ======================= */
+  const DEFAULT_TOPICS = [
+    'Movements', 'Movements/6-1', 'Movements/2-5-1', 'Movements/4-5-1', 'Movements/1-4', 'Movements/3-6-2-5-1', 'Movements/7-3-6',
+    'Passing chords', 'Passing chords/Diminished', 'Passing chords/Secondary dominants', 'Passing chords/Chromatic',
+    'Progressions',
+    'Substitutions', 'Substitutions/Tritone', 'Substitutions/Relative minor', 'Substitutions/Borrowed chords',
+    'Voicings', 'Voicings/Open', 'Voicings/Rootless', 'Voicings/Quartal', 'Voicings/Clusters',
+    'Licks & runs', 'Intros & endings', 'Improvisation', 'Songs'
+  ];
+  const topicOf = (n) => (n.topic || n.notebook || '').trim();
+  const inTopic = (n, path) => { const t = topicOf(n); return t === path || t.startsWith(path + '/'); };
+  const leaf = (path) => path.split('/').pop();
+  const parentOf = (path) => path.split('/').slice(0, -1).join('/');
+  const hueOf = (path) => { const top = path.split('/')[0]; let h = 0; for (let i = 0; i < top.length; i++) h = (h * 31 + top.charCodeAt(i)) % 360; return h; };
+  // Every topic path that exists: saved topics, topics used by notes, and their parents — in saved order
+  function topicPaths() {
+    const out = [], seen = new Set();
+    const add = (p) => { const parts = p.split('/').map((x) => x.trim()).filter(Boolean); for (let i = 1; i <= parts.length; i++) { const q = parts.slice(0, i).join('/'); if (!seen.has(q)) { seen.add(q); out.push(q); } } };
+    Store.topics().forEach(add);
+    Store.all().map(topicOf).filter(Boolean).sort().forEach(add);
+    return out;
+  }
+  const childrenOf = (path, paths) => (paths || topicPaths()).filter((p) => parentOf(p) === path && p !== path);
+  const countIn = (path) => Store.all().filter((n) => inTopic(n, path)).length;
+  function typeForTopic(path) {
+    const top = (path || '').split('/')[0].toLowerCase();
+    if (/voicing|placement/.test(top)) return 'placement';
+    if (/lick|run|fill/.test(top)) return 'lick';
+    if (/improv/.test(top)) return 'improv';
+    if (/song/.test(top)) return 'song';
+    if (/movement|passing|progression|substitution|intro|ending/.test(top)) return 'movement';
+    return 'idea';
+  }
+  async function addTopic(path) {
+    path = path.split('/').map((x) => x.trim()).filter(Boolean).join('/');
+    if (!path) return '';
+    if (!topicPaths().includes(path)) await Store.saveTopics(Store.topics().concat([path]));
+    return path;
+  }
+  async function renameTopic(from, to) {
+    to = to.split('/').map((x) => x.trim()).filter(Boolean).join('/');
+    if (!to || to === from) return from;
+    const swap = (p) => (p === from ? to : p.startsWith(from + '/') ? to + p.slice(from.length) : p);
+    await Store.saveTopics(topicPaths().map(swap));
+    for (const n of Store.all().filter((x) => inTopic(x, from))) { n.topic = swap(topicOf(n)); delete n.notebook; await Store.save(n); }
+    return to;
+  }
+  async function deleteTopic(path) {
+    const parent = parentOf(path);
+    for (const n of Store.all().filter((x) => inTopic(x, path))) { n.topic = parent; delete n.notebook; await Store.save(n); }
+    await Store.saveTopics(topicPaths().filter((p) => p !== path && !p.startsWith(path + '/')));
+  }
+
   /* ======================= Filtering ======================= */
   const SMART = {
     all: { label: 'All notes', icon: '▤', test: () => true },
@@ -242,11 +318,12 @@
     review: { label: 'Revisit', icon: '↻', test: needsReview, hint: 'Not practised for over a week' },
     mastered: { label: 'Mastered', icon: '✓', test: (n) => n.status === 'mastered' }
   };
+  const isHome = () => !ui.topic && ui.list === 'home' && !ui.tag && !ui.type && !ui.q.trim();
   function filtered() {
     const q = ui.q.trim().toLowerCase();
-    let list = Store.all().filter((n) => (SMART[ui.list] || SMART.all).test(n) &&
-      (!ui.notebook || n.notebook === ui.notebook) && (!ui.tag || (n.tags || []).includes(ui.tag)) && (!ui.type || n.type === ui.type) &&
-      (!q || [n.title, n.body, n.notebook, (n.tags || []).join(' '), (n.comments || []).map((c) => c.text).join(' '), (n.blocks || []).map((b) => (b.label || '') + ' ' + (b.prog || '') + ' ' + (b.symbol || '')).join(' ')].join(' ').toLowerCase().includes(q)));
+    const list = Store.all().filter((n) => (SMART[ui.list] || SMART.all).test(n) &&
+      (q || !ui.topic || inTopic(n, ui.topic)) && (!ui.tag || (n.tags || []).includes(ui.tag)) && (!ui.type || n.type === ui.type) &&
+      (!q || [n.title, n.body, topicOf(n), (n.tags || []).join(' '), (n.comments || []).map((c) => c.text).join(' '), (n.blocks || []).map((b) => (b.label || '') + ' ' + (b.prog || '') + ' ' + (b.symbol || '')).join(' ')].join(' ').toLowerCase().includes(q)));
     const sorters = {
       updated: (a, b) => (b.updated || 0) - (a.updated || 0),
       created: (a, b) => (b.created || 0) - (a.created || 0),
@@ -256,26 +333,49 @@
     list.sort(sorters[ui.sort] || sorters.updated);
     return list.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
   }
+  const go = (patch) => {
+    flush();
+    Object.assign(ui, { topic: '', tag: '', type: '', q: '', list: 'all' }, patch);
+    topicEdit = null; railAdding = null;
+    document.body.classList.remove('note-open', 'rail-open');
+    savePrefs(); renderRail(); renderList();
+    $('#list-pane').scrollTop = 0; window.scrollTo(0, 0);
+  };
 
   /* ======================= Rail ======================= */
+  let railAdding = null; // parent path ('' = top level) while the "new topic" box is open
+  let topicEdit = null;  // 'rename' | 'sub' | 'delete' on the topic page
   function renderRail() {
-    const all = Store.all();
-    const nbs = {}, tags = {};
-    all.forEach((n) => { if (n.notebook) nbs[n.notebook] = (nbs[n.notebook] || 0) + 1; (n.tags || []).forEach((t) => { tags[t] = (tags[t] || 0) + 1; }); });
+    const all = Store.all(), paths = topicPaths();
+    const tags = {};
+    all.forEach((n) => (n.tags || []).forEach((t) => { tags[t] = (tags[t] || 0) + 1; }));
+    const collapsed = new Set(ui.collapsed || []);
+    const addBox = (parent) => `<form class="topic-add" data-addform="${esc(parent)}"><input type="text" placeholder="${parent ? 'New topic in ' + esc(leaf(parent)) : 'New topic'}" aria-label="New topic name"><button class="btn sm primary" type="submit">Add</button></form>`;
+    const node = (path, depth) => {
+      const kids = childrenOf(path, paths), open = !collapsed.has(path);
+      const on = ui.topic === path;
+      return `<div class="tree-row ${on ? 'on' : ''}" style="--d:${depth}">
+          ${kids.length ? `<button class="caret" data-caret="${esc(path)}" aria-label="${open ? 'Collapse' : 'Expand'} ${esc(leaf(path))}" aria-expanded="${open}">${open ? '▾' : '▸'}</button>` : '<span class="caret-gap"></span>'}
+          <button class="tree-link" data-topic="${esc(path)}"><span class="dot" style="--h:${hueOf(path)}"></span><span class="ri-label">${esc(leaf(path))}</span><b>${countIn(path) || ''}</b></button>
+          <button class="tree-add" data-addsub="${esc(path)}" title="Add a topic inside ${esc(leaf(path))}" aria-label="Add a topic inside ${esc(leaf(path))}">＋</button>
+        </div>${railAdding === path ? addBox(path) : ''}${kids.length && open ? kids.map((k) => node(k, depth + 1)).join('') : ''}`;
+    };
     const item = (attrs, on, icon, label, count) => `<button class="rail-item ${on ? 'on' : ''}" ${attrs}><span class="ri-icon">${icon}</span><span class="ri-label">${esc(label)}</span>${count != null ? `<b>${count}</b>` : ''}</button>`;
+    const plain = !ui.topic && !ui.tag && !ui.type;
     $('#rail').innerHTML = `
       <div class="brand"><div class="brand-mark">✎</div><div>Riffbook<small>${Store.mode === 'cloud' ? 'Private to you' : Store.mode === 'local' ? 'Saved in this browser' : Store.mode === 'memory' ? 'Not saved' : 'Loading…'}</small></div></div>
       <div class="rail-actions">
         <button class="btn primary" id="new-note">＋ New note</button>
-        <button class="btn" id="quick-audio" title="Record an audio idea straight into a new note">🎙 Quick idea</button>
-        <button class="btn" id="midi-capture" title="Record what you play on your MIDI keyboard into a new note — chords are named for you">🎹 MIDI capture</button>
+        <div class="rail-two"><button class="btn sm" id="quick-audio" title="Record an audio idea straight into a new note">🎙 Idea</button>
+        <button class="btn sm" id="midi-capture" title="Record what you play on your MIDI keyboard into a new note — chords are named for you">🎹 MIDI</button></div>
       </div>
-      <div class="rail-sec">Library</div>
-      ${Object.entries(SMART).map(([k, s]) => item(`data-list="${k}" title="${esc(s.hint || '')}"`, ui.list === k && !ui.notebook && !ui.tag && !ui.type, s.icon, s.label, all.filter(s.test).length)).join('')}
-      <div class="rail-sec">Types</div>
-      ${Object.entries(TYPES).map(([k, t]) => item(`data-type="${k}"`, ui.type === k, t.icon, t.label, all.filter((n) => n.type === k).length)).join('')}
-      <div class="rail-sec">Notebooks</div>
-      ${Object.keys(nbs).sort().map((k) => item(`data-nb="${esc(k)}"`, ui.notebook === k, '▣', k, nbs[k])).join('') || '<div class="small muted rail-empty">Set a notebook on a note to group it here.</div>'}
+      ${item('data-home="1"', isHome(), '⌂', 'Library home', null)}
+      ${item('data-list="all"', plain && ui.list === 'all' && !isHome(), '▤', 'All notes', all.length)}
+      <div class="rail-sec spread"><span>Topics</span><button class="sec-add" id="add-top" title="New topic" aria-label="New topic">＋</button></div>
+      ${railAdding === '' ? addBox('') : ''}
+      <div class="tree">${childrenOf('', paths).map((p) => node(p, 0)).join('')}</div>
+      <div class="rail-sec">Shortcuts</div>
+      ${Object.entries(SMART).filter(([k]) => k !== 'all').map(([k, s]) => item(`data-list="${k}" title="${esc(s.hint || '')}"`, plain && ui.list === k, s.icon, s.label, all.filter(s.test).length)).join('')}
       <div class="rail-sec">Tags</div>
       <div class="tag-cloud">${Object.keys(tags).sort().map((t) => `<button class="tag-btn ${ui.tag === t ? 'on' : ''}" data-tag="${esc(t)}">#${esc(t)}</button>`).join('') || '<span class="small muted">No tags yet.</span>'}</div>
       <div class="rail-sec">Practice · last 12 weeks</div>
@@ -285,12 +385,25 @@
         ${Store.mode === 'local' ? `<div class="row" style="margin-top:10px"><button class="btn sm print-only" id="backup">⬇ Back up</button><label class="btn sm">⬆ Restore<input type="file" id="restore" accept=".json" hidden></label></div>` : ''}
         <a class="small" href="../index.html" style="display:block;margin-top:10px">← Syllabus Studio</a>
       </div>`;
-    const reset = () => { ui.notebook = ''; ui.tag = ''; ui.type = ''; };
-    $$('[data-list]', $('#rail')).forEach((b) => b.onclick = () => { reset(); ui.list = b.dataset.list; refresh(true); });
-    $$('[data-type]', $('#rail')).forEach((b) => b.onclick = () => { const t = b.dataset.type; reset(); ui.list = 'all'; ui.type = t; refresh(true); });
-    $$('[data-nb]', $('#rail')).forEach((b) => b.onclick = () => { const v = b.dataset.nb; reset(); ui.list = 'all'; ui.notebook = v; refresh(true); });
-    $$('[data-tag]', $('#rail')).forEach((b) => b.onclick = () => { const v = b.dataset.tag; const was = ui.tag === v; reset(); ui.list = 'all'; ui.tag = was ? '' : v; refresh(true); });
-    $$('[data-theme]', $('#rail')).forEach((b) => b.onclick = () => setTheme(b.dataset.theme));
+    const rail = $('#rail');
+    $('[data-home]', rail).onclick = () => go({ list: 'home' });
+    $$('[data-list]', rail).forEach((b) => b.onclick = () => go({ list: b.dataset.list }));
+    $$('[data-topic]', rail).forEach((b) => b.onclick = () => go({ topic: b.dataset.topic }));
+    $$('[data-tag]', rail).forEach((b) => b.onclick = () => go({ tag: ui.tag === b.dataset.tag ? '' : b.dataset.tag }));
+    $$('[data-caret]', rail).forEach((b) => b.onclick = () => { const s = new Set(ui.collapsed || []); s.has(b.dataset.caret) ? s.delete(b.dataset.caret) : s.add(b.dataset.caret); ui.collapsed = Array.from(s); savePrefs(); renderRail(); });
+    const openAdd = (parent) => { railAdding = railAdding === parent ? null : parent; if (parent) ui.collapsed = (ui.collapsed || []).filter((x) => x !== parent); renderRail(); const inp = $('.topic-add input', $('#rail')); inp && inp.focus(); };
+    $('#add-top').onclick = () => openAdd('');
+    $$('[data-addsub]', rail).forEach((b) => b.onclick = () => openAdd(b.dataset.addsub));
+    $$('[data-addform]', rail).forEach((f) => {
+      f.onsubmit = async (e) => {
+        e.preventDefault();
+        const name = $('input', f).value.replace(/\//g, '-').trim(); if (!name) return;
+        const path = await addTopic((f.dataset.addform ? f.dataset.addform + '/' : '') + name);
+        railAdding = null; go({ topic: path }); toast('Topic added');
+      };
+      $('input', f).onkeydown = (e) => { if (e.key === 'Escape') { railAdding = null; renderRail(); } };
+    });
+    $$('[data-theme]', rail).forEach((b) => b.onclick = () => setTheme(b.dataset.theme));
     $('#new-note').onclick = () => openTemplates();
     $('#quick-audio').onclick = quickAudio;
     $('#midi-capture').onclick = midiCapture;
@@ -313,31 +426,130 @@
     return `<svg class="heat" viewBox="0 0 ${12 * (cell + gap)} ${7 * (cell + gap)}" role="img" aria-label="Practice minutes over the last 12 weeks: ${total} minutes">${g}</svg><div class="small muted">${total} min practised · ${Object.keys(byDay).length} days</div>`;
   }
 
-  /* ======================= Note list ======================= */
+  /* ======================= Library: home, topic pages, note cards ======================= */
+  let spotId = null;
+  const firstChords = (n) => (n.blocks || []).find((b) => b.kind === 'chords' && (b.prog || '').trim());
+  const bodyChords = (n) => { const out = []; (n.body || '').replace(/\[([A-G][#b]?[^\]\s]{0,10})\]/g, (m, c) => { if (M.parseChord(c)) out.push(c); return m; }); return out; };
+  function cardChords(n) { const b = firstChords(n); return b ? b.prog.trim().split(/\s+/).filter((c) => c !== '|') : bodyChords(n); }
+  function noteCard(n, opts = {}) {
+    const t = TYPES[n.type] || TYPES.idea;
+    const chords = cardChords(n).slice(0, 10);
+    const place = !chords.length && (n.blocks || []).find((b) => b.kind === 'placement' && ((b.lh || []).length + (b.rh || []).length));
+    const snippet = (n.body || '').replace(/\[\[|\]\]/g, '').replace(/[#*`]/g, '').replace(/\[([^\]]+)\]/g, '$1').replace(/\s+/g, ' ').trim().slice(0, opts.big ? 220 : 120);
+    const tp = topicOf(n);
+    const where = tp && tp !== ui.topic ? (ui.topic && tp.startsWith(ui.topic + '/') ? tp.slice(ui.topic.length + 1) : tp).split('/').join(' › ') : '';
+    const has = (k) => (n.blocks || []).some((b) => b.kind === k && (k !== 'roll' || (b.roll && b.roll.events.length)) && (k !== 'audio' || b.ref));
+    return `<article class="ncard ${opts.big ? 'big' : ''}" data-card="${esc(n.id)}" style="--h:${hueOf(tp || t.label)}" tabindex="0" role="link" aria-label="Open ${esc(n.title || 'Untitled')}">
+      <div class="nc-top"><span class="nr-type" title="${t.label}">${t.icon}</span>${where ? `<span class="nc-where">${esc(where)}</span>` : `<span class="nc-where">${t.label}</span>`}
+        <span class="nc-flags">${n.pinned ? '📌' : ''}<button class="star-btn ${n.favourite ? 'on' : ''}" data-star="${esc(n.id)}" aria-label="Favourite" aria-pressed="${!!n.favourite}">★</button></span></div>
+      <h3>${esc(n.title || 'Untitled')}</h3>
+      ${snippet ? `<p>${esc(snippet)}</p>` : ''}
+      ${chords.length ? `<div class="nc-chords"><button class="play-dot" data-playcard="${esc(n.id)}" aria-label="Play these chords">▶</button><div class="chips">${chords.map((c) => `<button class="chip" data-chord="${esc(c)}">${esc(M.pretty(c))}</button>`).join('')}</div></div>` : ''}
+      ${place ? `<div class="nc-kb">${U.voicingSVG(place, { w: 11, h: 40, labels: false })}</div>` : ''}
+      <div class="nr-meta">${n.key ? `<span>Key ${esc(M.pretty(n.key))}</span>` : ''}<span class="st st-${n.status || 'idea'}">${STATUS[n.status || 'idea']}</span>${has('roll') ? '<span title="Piano-roll take">▦</span>' : ''}${has('audio') ? '<span title="Recording">🎙</span>' : ''}${(n.comments || []).length ? `<span>💬 ${n.comments.length}</span>` : ''}<span>${ago(n.updated)}</span>${needsReview(n) ? '<span class="due">↻ revisit</span>' : ''}</div>
+    </article>`;
+  }
+  function bindCards(root) {
+    $$('[data-card]', root).forEach((c) => {
+      c.onclick = () => select(c.dataset.card);
+      c.onkeydown = (e) => { if (e.key === 'Enter' && e.target === c) select(c.dataset.card); };
+    });
+    $$('.ncard .chip[data-chord]', root).forEach((c) => c.onclick = (e) => { e.stopPropagation(); M.playChord(c.dataset.chord, { dur: 1.6 }); });
+    $$('[data-playcard]', root).forEach((b) => b.onclick = (e) => {
+      e.stopPropagation();
+      const n = Store.get(b.dataset.playcard), blk = firstChords(n), chips = $$('.chip', b.closest('.nc-chords'));
+      M.playProgression(chips.map((c) => c.dataset.chord), { bpm: n.bpm || 80, beats: (blk && blk.beats) || 2, onStep: (k) => chips.forEach((c, j) => c.classList.toggle('on', j === k)), onEnd: () => chips.forEach((c) => c.classList.remove('on')) });
+    });
+    $$('[data-star]', root).forEach((b) => b.onclick = (e) => { e.stopPropagation(); const n = Store.get(b.dataset.star); n.favourite = !n.favourite; Store.save(n).then(() => { renderRail(); renderList(); }); });
+  }
+  function pickRandom(pool, not) { const p = pool.filter((n) => n.id !== not); const from = p.length ? p : pool; return from.length ? from[Math.floor(Math.random() * from.length)] : null; }
+
   function renderList() {
-    const list = filtered();
-    const title = ui.type ? TYPES[ui.type].label : ui.notebook ? ui.notebook : ui.tag ? '#' + ui.tag : (SMART[ui.list] || SMART.all).label;
-    $('#list-pane').innerHTML = `
-      <div class="list-head">
-        <div class="spread"><h2 style="margin:0">${esc(title)}</h2><button class="icon-btn mobile-only" id="menu-btn" aria-label="Open menu">☰</button></div>
-        <input type="search" id="q" placeholder="Search notes, chords, comments…" value="${esc(ui.q)}" aria-label="Search notes">
-        <div class="spread small"><span class="muted">${list.length} note${list.length === 1 ? '' : 's'}</span>
-          <label class="muted">Sort <select id="sort">${[['updated', 'Last edited'], ['created', 'Newest'], ['practised', 'Last practised'], ['title', 'Title']].map(([k, l]) => `<option value="${k}" ${ui.sort === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
-        ${Store.note ? `<div class="small" style="color:var(--d)">${esc(Store.note)}</div>` : ''}
-      </div>
-      <div class="note-list" role="list">${list.map((n) => {
-        const t = TYPES[n.type] || TYPES.idea;
-        const snippet = (n.body || '').replace(/[#*`[\]]/g, '').replace(/\s+/g, ' ').slice(0, 90);
-        return `<button class="note-row ${n.id === ui.selected ? 'on' : ''}" data-id="${esc(n.id)}" role="listitem">
-          <div class="nr-top"><span class="nr-type" title="${t.label}">${t.icon}</span><b class="nr-title">${esc(n.title || 'Untitled')}</b>${n.pinned ? '<span title="Pinned">📌</span>' : ''}${n.favourite ? '<span class="star" title="Favourite">★</span>' : ''}</div>
-          <div class="nr-snip">${esc(snippet) || '<span class="muted">No text</span>'}</div>
-          <div class="nr-meta"><span>${ago(n.updated)}</span>${n.key ? `<span>Key ${esc(M.pretty(n.key))}</span>` : ''}<span class="st st-${n.status || 'idea'}">${STATUS[n.status || 'idea']}</span>${(n.comments || []).length ? `<span>💬 ${n.comments.length}</span>` : ''}${needsReview(n) ? '<span class="due">↻ revisit</span>' : ''}</div>
-        </button>`;
-      }).join('') || `<div class="empty">${Store.mode === 'loading' ? 'Loading your notes…' : Store.all().length ? 'No notes match.' : 'No notes yet. Tap <b>＋ New note</b> to capture your first idea.'}</div>`}</div>`;
-    $('#q').oninput = (e) => { ui.q = e.target.value; savePrefs(); renderList(); $('#q').focus(); $('#q').setSelectionRange(ui.q.length, ui.q.length); };
-    $('#sort').onchange = (e) => { ui.sort = e.target.value; savePrefs(); renderList(); };
-    $$('.note-row').forEach((r) => r.onclick = () => select(r.dataset.id));
+    const pane = $('#list-pane');
+    const all = Store.all(), paths = topicPaths();
+    const bar = `<div class="lib-bar">
+        <button class="icon-btn mobile-only" id="menu-btn" aria-label="Open menu">☰</button>
+        <input type="search" id="q" placeholder="Search your library — titles, chords, comments…" value="${esc(ui.q)}" aria-label="Search your library">
+        <button class="btn" id="inspire" title="Open a random note${ui.topic ? ' from this topic' : ''}">🎲 Inspire me</button>
+        <button class="btn primary" id="bar-new">＋ New note</button>
+      </div>${Store.note ? `<div class="small" style="color:var(--d);margin-bottom:8px">${esc(Store.note)}</div>` : ''}`;
+    let html = '';
+    if (isHome()) {
+      if (!Store.get(spotId)) { const s = pickRandom(all.filter((n) => cardChords(n).length), null) || pickRandom(all, null); spotId = s ? s.id : null; }
+      const spot = Store.get(spotId);
+      const tops = childrenOf('', paths);
+      html = `<header class="lib-head"><h1>Your library</h1><p class="muted">${all.length} note${all.length === 1 ? '' : 's'} in ${tops.length} topics. Open a topic and keep adding to it; come back any time for something to play.</p></header>
+        ${spot ? `<section class="spot"><div class="spread"><span class="eyebrow">Try this today</span><button class="btn sm ghost" id="spot-next">🎲 Another</button></div>${noteCard(spot, { big: true })}</section>` : ''}
+        <section><div class="spread"><h2>Topics</h2><button class="btn sm" id="home-add-topic">＋ New topic</button></div>
+          <div class="topic-grid">${tops.map((p) => {
+            const kids = childrenOf(p, paths), c = countIn(p);
+            return `<button class="tcard" data-topic="${esc(p)}" style="--h:${hueOf(p)}"><span class="tc-count">${c}</span><b>${esc(p)}</b><span class="small muted">${kids.length ? esc(kids.slice(0, 4).map(leaf).join(' · ')) + (kids.length > 4 ? ' …' : '') : c ? 'note' + (c === 1 ? '' : 's') : 'Empty — add your first note'}</span></button>`;
+          }).join('')}</div></section>
+        ${all.length ? `<section><h2>Recently edited</h2><div class="ncards">${all.slice().sort((a, b) => (b.updated || 0) - (a.updated || 0)).slice(0, 6).map((n) => noteCard(n)).join('')}</div></section>` : ''}`;
+    } else {
+      const list = filtered();
+      const kids = ui.topic && !ui.q.trim() ? childrenOf(ui.topic, paths) : [];
+      const searching = !!ui.q.trim();
+      const title = searching ? 'Search results' : ui.topic ? leaf(ui.topic) : ui.tag ? '#' + ui.tag : (SMART[ui.list] || SMART.all).label;
+      const crumbs = ['<a href="#" data-home="1">Library</a>'].concat(ui.topic && !searching ? ui.topic.split('/').map((seg, i, arr) => (i === arr.length - 1 ? `<span>${esc(seg)}</span>` : `<a href="#" data-topic="${esc(arr.slice(0, i + 1).join('/'))}">${esc(seg)}</a>`)) : [`<span>${esc(title)}</span>`]).join(' <span class="sep">›</span> ');
+      const typesHere = Object.keys(TYPES).filter((k) => Store.all().some((n) => n.type === k && (!ui.topic || inTopic(n, ui.topic))));
+      html = `<nav class="crumbs" aria-label="Breadcrumb">${crumbs}</nav>
+        <header class="lib-head topic-head" style="--h:${hueOf(ui.topic || title)}">
+          ${topicEdit === 'rename' ? `<form id="t-rename" class="row"><input type="text" id="t-name" value="${esc(leaf(ui.topic))}" aria-label="Topic name"><button class="btn sm primary" type="submit">Save</button><button class="btn sm ghost" type="button" id="t-cancel">Cancel</button></form>`
+            : `<div class="spread"><h1>${esc(title)}</h1>${ui.topic && !searching ? `<div class="row t-actions"><button class="btn sm" id="t-sub">＋ Subtopic</button><button class="btn sm ghost" id="t-ren">Rename</button><button class="btn sm ghost" id="t-del">${topicEdit === 'delete' ? 'Tap again — notes move up a level' : 'Delete topic'}</button></div>` : ''}</div>`}
+          ${topicEdit === 'sub' ? `<form id="t-subform" class="row" style="margin-top:8px"><input type="text" id="t-subname" placeholder="New topic inside ${esc(leaf(ui.topic))}, e.g. 6-1" aria-label="Subtopic name"><button class="btn sm primary" type="submit">Add</button><button class="btn sm ghost" type="button" id="t-cancel">Cancel</button></form>` : ''}
+          ${kids.length ? `<div class="subtopics">${kids.map((k) => `<button class="subchip" data-topic="${esc(k)}">${esc(leaf(k))} <b>${countIn(k)}</b></button>`).join('')}</div>` : ''}
+        </header>
+        ${ui.list === 'all' && !ui.q.trim() && !ui.tag ? `<form id="qa" class="composer">
+          <input type="text" id="qa-title" placeholder="${ui.topic ? 'Add to ' + esc(leaf(ui.topic)) + ' — name the idea…' : 'Add a note — name the idea…'}" aria-label="Note title">
+          <input type="text" id="qa-chords" placeholder="Chords, if any — e.g. Am G/B C" aria-label="Chords">
+          <textarea id="qa-body" rows="2" placeholder="What is it, where does it fit, how does it feel?" aria-label="Notes"></textarea>
+          <div class="row small"><label>Key <select id="qa-key">${M.KEYS.map((k) => `<option ${k.name === (ui.lastKey || 'C') ? 'selected' : ''}>${k.name}</option>`).join('')}</select></label>
+            <button class="btn sm primary" type="submit">Add note</button><span class="muted">It stays on this page, so you can keep adding.</span></div>
+        </form>` : ''}
+        <div class="spread list-tools"><div class="row" style="gap:6px">${typesHere.length > 1 ? `<button class="subchip ${!ui.type ? 'on' : ''}" data-typef="">All</button>` + typesHere.map((k) => `<button class="subchip ${ui.type === k ? 'on' : ''}" data-typef="${k}">${TYPES[k].icon} ${TYPES[k].label}</button>`).join('') : ''}</div>
+          <span class="small muted">${list.length} note${list.length === 1 ? '' : 's'} · <label>Sort <select id="sort">${[['updated', 'Last edited'], ['created', 'Newest'], ['practised', 'Last practised'], ['title', 'Title']].map(([k, l]) => `<option value="${k}" ${ui.sort === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></span></div>
+        <div class="ncards">${list.map((n) => noteCard(n)).join('') || `<div class="empty">${Store.mode === 'loading' ? 'Loading your notes…' : ui.q.trim() ? 'Nothing matches that search.' : ui.topic ? 'No notes here yet. Use the box above to add the first one.' : 'No notes here yet.'}</div>`}</div>`;
+    }
+    pane.innerHTML = `<div class="lib-wrap">${bar}${html}</div>`;
+    // top bar
     $('#menu-btn').onclick = () => document.body.classList.add('rail-open');
+    $('#q').oninput = (e) => { ui.q = e.target.value; if (ui.list === 'home') ui.list = 'all'; savePrefs(); renderList(); const q = $('#q'); q.focus(); q.setSelectionRange(ui.q.length, ui.q.length); };
+    $('#bar-new').onclick = () => openTemplates();
+    $('#inspire').onclick = () => { const pool = ui.topic ? Store.all().filter((n) => inTopic(n, ui.topic)) : Store.all(); const n = pickRandom(pool.length ? pool : Store.all(), ui.selected); if (n) select(n.id); else toast('Add a note first'); };
+    $$('[data-home]', pane).forEach((a) => a.onclick = (e) => { e.preventDefault(); go({ list: 'home' }); });
+    $$('[data-topic]', pane).forEach((a) => a.onclick = (e) => { e.preventDefault(); go({ topic: a.dataset.topic }); });
+    bindCards(pane);
+    if ($('#spot-next')) $('#spot-next').onclick = () => { const s = pickRandom(Store.all(), spotId); spotId = s && s.id; renderList(); };
+    if ($('#home-add-topic')) $('#home-add-topic').onclick = () => { railAdding = ''; document.body.classList.add('rail-open'); renderRail(); const inp = $('.topic-add input', $('#rail')); inp && inp.focus(); };
+    if ($('#sort')) $('#sort').onchange = (e) => { ui.sort = e.target.value; savePrefs(); renderList(); };
+    $$('[data-typef]', pane).forEach((b) => b.onclick = () => { ui.type = b.dataset.typef; savePrefs(); renderList(); });
+    // topic actions
+    const cancel = $('#t-cancel'); if (cancel) cancel.onclick = () => { topicEdit = null; renderList(); };
+    if ($('#t-sub')) $('#t-sub').onclick = () => { topicEdit = 'sub'; renderList(); $('#t-subname').focus(); };
+    if ($('#t-ren')) $('#t-ren').onclick = () => { topicEdit = 'rename'; renderList(); $('#t-name').select(); };
+    if ($('#t-del')) $('#t-del').onclick = async () => {
+      if (topicEdit !== 'delete') { topicEdit = 'delete'; renderList(); return; }
+      const parent = parentOf(ui.topic); await deleteTopic(ui.topic); toast('Topic deleted'); go(parent ? { topic: parent } : { list: 'home' });
+    };
+    if ($('#t-subform')) $('#t-subform').onsubmit = async (e) => { e.preventDefault(); const name = $('#t-subname').value.replace(/\//g, '-').trim(); if (!name) return; const p = await addTopic(ui.topic + '/' + name); go({ topic: p }); };
+    if ($('#t-rename')) $('#t-rename').onsubmit = async (e) => { e.preventDefault(); const name = $('#t-name').value.replace(/\//g, '-').trim(); if (!name) return; const parent = parentOf(ui.topic); const p = await renameTopic(ui.topic, (parent ? parent + '/' : '') + name); go({ topic: p }); toast('Renamed'); };
+    // quick add: stays on the page
+    if ($('#qa')) {
+      const submit = async (e) => {
+        e && e.preventDefault();
+        const title = $('#qa-title').value.trim(), chords = $('#qa-chords').value.trim(), body = $('#qa-body').value.trim();
+        if (!title && !chords && !body) { $('#qa-title').focus(); return; }
+        const n = newNote(typeForTopic(ui.topic));
+        n.title = title || chords || body.slice(0, 40); n.body = body; n.key = $('#qa-key').value; ui.lastKey = n.key;
+        if (chords) n.blocks.push({ id: uid('b'), kind: 'chords', label: '', prog: chords, beats: 2 });
+        await Store.add(n);
+        savePrefs(); renderRail(); renderList(); toast('Added to ' + (ui.topic ? leaf(ui.topic) : 'your library'));
+        $('#qa-title').focus();
+      };
+      $('#qa').onsubmit = submit;
+      $('#qa-body').onkeydown = (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit(e); };
+    }
   }
 
   /* ======================= Editor ======================= */
@@ -352,13 +564,19 @@
   };
   const flush = () => { if (current && current._dirty) { clearTimeout(saveTimer); return Store.save(current); } return Promise.resolve(); };
 
+  function closeNote() {
+    flush();
+    if (rollRec.block || micRec.mr) { toast('Stop the recording first'); return; }
+    document.body.classList.remove('note-open');
+    renderRail(); renderList();
+  }
   function select(id) {
     flush();
     ui.selected = id; ui.viewKey = null; savePrefs();
     current = Store.get(id) || null;
     document.body.classList.add('note-open');
-    renderList(); renderEditor();
-    $('#note-pane').scrollTop = 0;
+    renderRail(); renderEditor();
+    $('#note-pane').scrollTop = 0; window.scrollTo(0, 0);
   }
 
   function renderEditor() {
@@ -375,7 +593,7 @@
     const backlinks = Store.all().filter((x) => x.id !== n.id && ((x.links || []).includes(n.id) || (x.body || '').toLowerCase().includes('[[' + (n.title || '').toLowerCase() + ']]')));
     pane.innerHTML = `
       <div class="ed-top">
-        <button class="btn sm ghost mobile-only" id="back">← Notes</button>
+        <button class="btn sm ghost" id="back" title="Back to the library (Esc)">← ${esc(topicOf(n) ? topicOf(n).split('/').join(' › ') : 'Library')}</button>
         <span class="small muted" id="save-state">${n._dirty ? 'Editing…' : 'Saved'}</span>
         <span class="live-pill" id="live-top" ${rollRec.live ? '' : 'hidden'}>${rollRec.live ? '🎹 ' + esc(rollRec.live) : ''}</span>
         <div class="row" style="gap:6px;margin-left:auto">
@@ -394,7 +612,8 @@
         <label>Status <select id="m-status">${Object.entries(STATUS).map(([k, l]) => `<option value="${k}" ${k === (n.status || 'idea') ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <label>Key <select id="m-key"><option value="">—</option>${M.KEYS.map((k) => `<option ${k.name === n.key ? 'selected' : ''}>${k.name}</option>`).join('')}</select></label>
         <label>Tempo <input type="number" id="m-bpm" min="30" max="240" value="${n.bpm || ''}" placeholder="bpm"></label>
-        <label>Notebook <input type="text" id="m-nb" list="nb-list" value="${esc(n.notebook || '')}" placeholder="e.g. Church band"><datalist id="nb-list">${Array.from(new Set(Store.all().map((x) => x.notebook).filter(Boolean))).map((x) => `<option value="${esc(x)}">`).join('')}</datalist></label>
+        <label>Topic <select id="m-topic"><option value="">— No topic —</option>${topicPaths().map((t) => `<option value="${esc(t)}" ${t === topicOf(n) ? 'selected' : ''}>${esc(t.split('/').map((x, i, arr) => (i < arr.length - 1 ? '\u00a0\u00a0' : x)).join(''))}</option>`).join('')}<option value="__new">＋ New topic…</option></select></label>
+        <label id="m-newtopic-wrap" hidden>New topic <input type="text" id="m-newtopic" placeholder="e.g. Movements/6-1"></label>
         <label class="grow">Tags <input type="text" id="m-tags" value="${esc((n.tags || []).join(', '))}" placeholder="gospel, interlude, ending"></label>
       </div>
       ${n.key ? `<div class="transpose-bar"><span class="small muted">View in key</span><div class="keybar">${M.KEYS.map((k) => `<button data-vk="${k.name}" class="${(ui.viewKey || n.key) === k.name ? 'on' : ''}">${M.pretty(k.name)}</button>`).join('')}</div>${semis ? `<button class="btn sm" id="apply-key">Make ${M.pretty(ui.viewKey)} the note's key</button>` : ''}</div>` : ''}
@@ -525,14 +744,16 @@
 
   function bindEditor(n, semis) {
     const pane = $('#note-pane');
-    $('#back') && ($('#back').onclick = () => { flush(); document.body.classList.remove('note-open'); });
+    $('#back').onclick = closeNote;
     $('#title').oninput = (e) => { n.title = e.target.value; markDirty(); };
     $('#title').onblur = () => renderList();
     $('#m-type').onchange = (e) => { n.type = e.target.value; markDirty(); renderList(); renderRail(); };
     $('#m-status').onchange = (e) => { n.status = e.target.value; markDirty(); renderList(); renderRail(); };
     $('#m-key').onchange = (e) => { n.key = e.target.value; ui.viewKey = null; markDirty(true); };
     $('#m-bpm').oninput = (e) => { n.bpm = +e.target.value || null; markDirty(); };
-    $('#m-nb').onchange = (e) => { n.notebook = e.target.value.trim(); markDirty(); renderRail(); };
+    const setTopic = (t) => { n.topic = t; delete n.notebook; markDirty(true); renderRail(); };
+    $('#m-topic').onchange = (e) => { if (e.target.value === '__new') { $('#m-newtopic-wrap').hidden = false; $('#m-newtopic').focus(); } else setTopic(e.target.value); };
+    $('#m-newtopic').onchange = async (e) => { const t = await addTopic(e.target.value); if (t) setTopic(t); };
     $('#m-tags').onchange = (e) => { n.tags = e.target.value.split(',').map((t) => t.trim().toLowerCase().replace(/^#/, '')).filter(Boolean); markDirty(); renderRail(); };
     $('#pin').onclick = () => { n.pinned = !n.pinned; markDirty(true); renderList(); renderRail(); };
     $('#fav').onclick = () => { n.favourite = !n.favourite; markDirty(true); renderList(); renderRail(); };
@@ -547,7 +768,7 @@
     $('#del').onclick = (e) => {
       if (!e.target.dataset.armed) { e.target.dataset.armed = '1'; e.target.textContent = 'Tap again to delete'; return; }
       const id = n.id; current = null; ui.selected = null; savePrefs();
-      Store.remove(id).then(() => { toast('Note deleted'); document.body.classList.remove('note-open'); refresh(); });
+      Store.remove(id).then(() => { toast('Note deleted'); document.body.classList.remove('note-open'); renderRail(); renderList(); });
     };
     $$('[data-vk]').forEach((b) => b.onclick = () => { ui.viewKey = b.dataset.vk === n.key ? null : b.dataset.vk; renderEditor(); });
     if ($('#apply-key')) $('#apply-key').onclick = () => {
@@ -845,7 +1066,7 @@
     { id: 'blank', icon: '✎', name: 'Blank note', desc: 'Just write.', make: (n) => { n.type = 'idea'; } }
   ];
   function newNote(type) {
-    return { id: 'note-' + uid(''), title: '', type: type || 'idea', notebook: ui.notebook || '', tags: ui.tag ? [ui.tag] : [], key: 'C', bpm: 80, status: 'idea', pinned: false, favourite: false, body: '', blocks: [], comments: [], practice: [], links: [], created: Date.now(), updated: Date.now() };
+    return { id: 'note-' + uid(''), title: '', type: type || 'idea', topic: ui.topic || '', tags: ui.tag ? [ui.tag] : [], key: 'C', bpm: 80, status: 'idea', pinned: false, favourite: false, body: '', blocks: [], comments: [], practice: [], links: [], created: Date.now(), updated: Date.now() };
   }
   function openTemplates() {
     const dlg = $('#templates');
@@ -930,7 +1151,7 @@
       if (b.ref) { const blob = await Store.blob(b.ref); if (blob) b.data = await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); }); }
     }
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([JSON.stringify({ app: 'riffbook', version: 1, exported: new Date().toISOString(), notes })], { type: 'application/json' }));
+    a.href = URL.createObjectURL(new Blob([JSON.stringify({ app: 'riffbook', version: 2, exported: new Date().toISOString(), topics: Store.topics(), notes })], { type: 'application/json' }));
     a.download = 'riffbook-backup-' + new Date().toISOString().slice(0, 10) + '.json'; a.click();
     toast('Backup saved');
   }
@@ -945,6 +1166,7 @@
         if (existing) Object.assign(existing, n); else Store.all().push(n);
         await Store.save(Store.get(n.id));
       }
+      if (data.topics) await Store.saveTopics(Store.topics().concat(data.topics));
       toast(`Restored ${(data.notes || []).length} notes`); refresh();
     } catch (e) { toast('That file is not a Riffbook backup'); }
   }
@@ -967,13 +1189,14 @@
     if (rollRec.block) return;
     if (e.key === 'n') { e.preventDefault(); openTemplates(); }
     if (e.key === '/') { e.preventDefault(); $('#q') && $('#q').focus(); }
-    if (e.key === 'Escape') { $('#templates').hidden = true; document.body.classList.remove('rail-open'); }
+    if (e.key === 'Escape') { if (!$('#templates').hidden) { $('#templates').hidden = true; return; } if (document.body.classList.contains('rail-open')) { document.body.classList.remove('rail-open'); return; } if (document.body.classList.contains('note-open')) closeNote(); }
   });
   $('#scrim').onclick = () => document.body.classList.remove('rail-open');
   window.addEventListener('beforeunload', () => { flush(); });
   document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
 
   setTheme(ui.theme);
+  ui.selected = null; ui.q = '';
   renderRail(); renderList(); renderEditor();
   Store.on((remote) => {
     const sel = (ui.selected && Store.get(ui.selected)) || null;
@@ -981,9 +1204,10 @@
     const typing = pane.contains(document.activeElement) && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
     if (sel !== current) { current = sel; renderEditor(); }
     else if (remote && current && !current._dirty && !typing && !rollRec.block && !micRec.mr) renderEditor();
-    renderRail();
-    if (!$('#list-pane').contains(document.activeElement)) renderList();
+    if (!$('#rail').contains(document.activeElement) || document.activeElement.tagName !== 'INPUT') renderRail();
+    const a = document.activeElement;
+    if (!document.body.classList.contains('note-open') && !($('#list-pane').contains(a) && /INPUT|TEXTAREA|SELECT/.test(a.tagName))) renderList();
   });
   Store.init();
-  window.Riffbook = { exampleNotes };
+  window.Riffbook = { exampleNotes, DEFAULT_TOPICS };
 })();

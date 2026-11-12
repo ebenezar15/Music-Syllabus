@@ -23,7 +23,10 @@ Progress, notes, ticked exercises and plans are saved in your browser (localStor
 
 A separate app: your personal notebook for **your own improvisations, chord movements and hand placements**. It works like a notes app, with musical blocks and your own comments.
 
-- **Notes:** each note has a title, type (Improvisation, Chord movement, Placement, Lick/run, Idea, Song arrangement), status (New idea → Practising → Ready to use → Mastered), key, tempo, notebook and tags. You can pin and favourite notes.
+- **Topics:** the library is organised as a tree of topics you control, for example Movements → 6-1, 2-5-1; Passing chords → Diminished; Substitutions; Voicings; Licks & runs; Songs. You can add, nest, rename and delete topics. Every topic has its own page with a **quick-add box**. Type a title, chords and a line of text, press Enter, and the page stays open so you can keep adding.
+- **Library home:** topic cards with counts, a "Try this today" note picked at random, and your recently edited notes. **🎲 Inspire me** opens a random note from the library or the current topic.
+- **Note cards:** notes show as cards. You can play the chords on a card without opening the note.
+- **Notes:** each note has a title, type (Improvisation, Chord movement, Placement, Lick/run, Idea, Song arrangement), status (New idea → Practising → Ready to use → Mastered), key, tempo, topic and tags. You can pin and favourite notes.
 - **Writing:** simple formatting (`# heading`, `**bold**`, `- list`). Write `[Cmaj7]` and it becomes a chord you can tap. Write `[[Note title]]` to link another note. Backlinks show which notes link to this one.
 - **Blocks:** you can add six kinds:
   - chord progressions you can play (block, broken, arpeggio or pad)
@@ -35,7 +38,7 @@ A separate app: your personal notebook for **your own improvisations, chord move
 - **My comments:** timestamped personal comments, each marked as 💡 idea, ✅ works, ⚠️ tricky, ❤️ love it or ❓ question. A comment can point at one block of the note.
 - **Practice:** each note has a practice log (minutes, tempo, how it went), totals, and a tempo progress chart. **Practice mode** gives you a timer, a metronome and the note's chords on a loop, then logs the session. The sidebar shows a 12-week practice heatmap.
 - **View in any key:** chords, placements and piano rolls in a note can be shown in any key. Make that key permanent with one tap.
-- **Organising:** smart lists (All, Pinned, Favourites, Practising, **Revisit** for notes you haven't practised in a week, Mastered), plus types, notebooks and tags. You can search and sort.
+- **Organising:** smart lists (All, Pinned, Favourites, Practising, **Revisit** for notes you haven't practised in a week, Mastered), plus the topic tree, types and tags. Search covers the whole library.
 - **Starting notes:** templates (Improvisation, Chord movement, Hand placement, Lick, Song, Blank), and a **Quick idea** button that records audio straight into a new note.
 - **Shortcuts and data:** `N` makes a new note and `/` jumps to search. Back up and restore as a JSON file, recordings included. The same 9 colour schemes and Avenir Next typography as Syllabus Studio.
 
