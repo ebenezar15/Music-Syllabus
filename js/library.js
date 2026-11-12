@@ -155,23 +155,7 @@ window.LibraryModule = function (App) {
     const n = notesOf(e);
     return n.length ? n[0] % 12 : 0;
   }
-  // Suggest a chord name from the notes (bass = lowest note)
-  function detectName(midis, flat) {
-    const s = midis.slice().sort((a, b) => a - b);
-    if (s.length < 2) return '';
-    const bass = s[0] % 12;
-    const pcs = s.map((m) => m % 12);
-    let name = M.identify(pcs, flat, bass);
-    if (name.includes('-')) {
-      const upper = s.slice(1).map((m) => m % 12);
-      const up = M.identify(upper, flat);
-      name = up.includes('-') ? '' : up + '/' + M.nameOf(bass, flat);
-    } else {
-      const ch = M.parseChord(name);
-      if (ch && M.pcOf(ch.root) !== bass) name += '/' + M.nameOf(bass, flat);
-    }
-    return name;
-  }
+  const { detectName } = window.MusicUI;
   // Voicing presets from a chord symbol
   const PRESETS = {
     'Close (LH root)': (r, s) => ({ lh: [r - 12], rh: s.map((x) => r + (x > 12 ? x - 12 : x)) }),
@@ -196,95 +180,11 @@ window.LibraryModule = function (App) {
     if (ch.bass) v.lh = [36 + M.pcOf(ch.bass) + (M.pcOf(ch.bass) > 7 ? 0 : 12)];
     return v;
   }
-  // Spell pitch classes the way the chord symbol spells them (Cm9 gives Eb, Bb), else by key preference
-  function spellerFor(sym, flat) {
-    const map = {};
-    const ch = sym && M.parseChord(sym);
-    if (ch) { ch.notes.forEach((n) => { map[M.pcOf(n)] = n; }); if (ch.bass) map[M.pcOf(ch.bass)] = ch.bass; }
-    return (pc) => map[pc] || M.nameOf(pc, flat);
-  }
+  const { spellerFor } = window.MusicUI;
   const shiftFor = (fromPc, toPc) => { let d = M.mod(toPc - fromPc); return d > 6 ? d - 12 : d; };
 
-  /* ======================= Drawing ======================= */
-  const WHITE = [0, 2, 4, 5, 7, 9, 11];
-  // Compact SVG keyboard with LH / RH dots
-  function voicingSVG(e, opts = {}) {
-    const lh = e.lh || [], rh = e.rh || [], all = lh.concat(rh);
-    let lo = all.length ? Math.min(...all) : 48, hi = all.length ? Math.max(...all) : 72;
-    lo = Math.floor(lo / 12) * 12; hi = Math.ceil((hi + 1) / 12) * 12 - 1;
-    if (opts.from) { lo = opts.from; hi = opts.to; }
-    const ww = opts.w || 14, wh = opts.h || 54;
-    let x = 0, whites = '', blacks = '', dots = '';
-    const pos = {};
-    for (let m = lo; m <= hi; m++) { if (WHITE.includes(m % 12)) { pos[m] = x + ww / 2; x += ww; } else pos[m] = x; }
-    const width = x;
-    for (let m = lo; m <= hi; m++) {
-      const isL = lh.includes(m), isR = rh.includes(m);
-      if (WHITE.includes(m % 12)) {
-        whites += `<rect x="${pos[m] - ww / 2}" y="0" width="${ww}" height="${wh}" rx="2" fill="${isL ? 'var(--s)' : isR ? 'var(--accent)' : 'var(--key-white)'}" stroke="var(--line)"/>`;
-        if (m % 12 === 0 && opts.labels !== false) whites += `<text x="${pos[m]}" y="${wh - 4}" text-anchor="middle" font-size="${ww * 0.5}" fill="${isL || isR ? 'var(--accent-ink)' : '#888'}">C${Math.floor(m / 12) - 1}</text>`;
-      } else {
-        blacks += `<rect x="${pos[m] - ww * 0.32}" y="0" width="${ww * 0.64}" height="${wh * 0.6}" rx="1.5" fill="${isL ? 'var(--s)' : isR ? 'var(--accent)' : 'var(--key-black)'}"/>`;
-      }
-      if (opts.names && (isL || isR)) dots += `<text x="${pos[m]}" y="${wh + 13}" text-anchor="middle" font-size="10" font-weight="700" fill="${isL ? 'var(--s)' : 'var(--accent)'}">${M.pretty(opts.speller ? opts.speller(m % 12) : M.nameOf(m % 12, opts.flat))}</text>`;
-    }
-    return `<svg class="mini-kb" viewBox="0 0 ${width} ${wh + (opts.names ? 18 : 0)}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Voicing: ${esc(all.map((m) => noteName(m, opts.flat)).join(' '))}">${whites}${blacks}${dots}</svg>`;
-  }
-
-  // Piano roll as SVG
-  function rollSVG(roll, opts = {}) {
-    const ev = roll.events || [];
-    if (!ev.length) return '<div class="empty small">No notes captured yet.</div>';
-    let lo = Math.min(...ev.map((e) => e.m)) - 2, hi = Math.max(...ev.map((e) => e.m)) + 2;
-    const len = Math.max(4, Math.ceil(Math.max(...ev.map((e) => e.t + e.d)) / 4) * 4);
-    const row = opts.row || 9, ppb = opts.ppb || 36, gutter = 34;
-    const H = (hi - lo + 1) * row, W = gutter + len * ppb;
-    const split = opts.split || 60;
-    let g = '';
-    for (let m = lo; m <= hi; m++) {
-      const y = (hi - m) * row;
-      const black = !WHITE.includes(m % 12);
-      g += `<rect x="${gutter}" y="${y}" width="${len * ppb}" height="${row}" fill="${black ? 'var(--surface-2)' : 'var(--surface)'}"/>`;
-      if (m % 12 === 0) g += `<text x="2" y="${y + row - 1}" font-size="${Math.min(10, row + 1)}" fill="var(--muted)">C${Math.floor(m / 12) - 1}</text><line x1="${gutter}" x2="${W}" y1="${y + row}" y2="${y + row}" stroke="var(--line)"/>`;
-    }
-    for (let b = 0; b <= len; b++) g += `<line x1="${gutter + b * ppb}" x2="${gutter + b * ppb}" y1="0" y2="${H}" stroke="var(--line)" stroke-width="${b % 4 === 0 ? 1.4 : 0.5}"/>`;
-    ev.forEach((e) => {
-      g += `<rect x="${gutter + e.t * ppb + 0.5}" y="${(hi - e.m) * row + 1}" width="${Math.max(3, e.d * ppb - 1)}" height="${row - 2}" rx="2" fill="${e.m < split ? 'var(--s)' : 'var(--accent)'}" opacity="${0.55 + (e.v || 90) / 300}"><title>${noteName(e.m)} · beat ${(e.t + 1).toFixed(2)}</title></rect>`;
-    });
-    g += `<line class="playhead" x1="${gutter}" x2="${gutter}" y1="0" y2="${H}" stroke="var(--accent-2)" stroke-width="2" opacity="0"/>`;
-    return `<div class="roll-wrap"><svg class="roll-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" data-ppb="${ppb}" data-gutter="${gutter}" role="img" aria-label="Piano roll, ${ev.length} notes">${g}</svg></div>`;
-  }
-
-  let rollAnim = null;
-  function playRoll(roll, svgEl, semis = 0) {
-    M.stopAll(); cancelAnimationFrame(rollAnim);
-    const c = M.audio(); if (!c) return;
-    const spb = 60 / (roll.bpm || 90), t0 = c.currentTime + 0.08;
-    (roll.events || []).forEach((e) => M.tone(e.m + semis, t0 + e.t * spb, Math.max(0.1, e.d * spb), { vel: 0.12 + (e.v || 90) / 700 }));
-    const end = Math.max(...roll.events.map((e) => e.t + e.d));
-    const ph = svgEl && svgEl.querySelector('.playhead');
-    if (!ph) return;
-    const ppb = +svgEl.dataset.ppb, gut = +svgEl.dataset.gutter;
-    ph.setAttribute('opacity', '1');
-    const step = () => {
-      const beat = (c.currentTime - t0) / spb;
-      if (beat > end + 0.5) { ph.setAttribute('opacity', '0'); return; }
-      const x = gut + Math.max(0, beat) * ppb;
-      ph.setAttribute('x1', x); ph.setAttribute('x2', x);
-      rollAnim = requestAnimationFrame(step);
-    };
-    step();
-  }
-
-  function playVoicing(lh, rh, style) {
-    const c = M.audio(); if (!c) return;
-    M.stopAll();
-    const t = c.currentTime + 0.03;
-    if (style === 'roll') { lh.concat(rh).sort((a, b) => a - b).forEach((m, i) => M.tone(m, t + i * 0.07, 2, { vel: 0.17 })); return; }
-    if (style === 'arp') { const all = lh.concat(rh).sort((a, b) => a - b); all.forEach((m, i) => M.tone(m, t + i * 0.18, 1.6, { vel: 0.18 })); return; }
-    lh.forEach((m) => M.tone(m, t, 2, { vel: 0.18, pad: style === 'pad' }));
-    rh.forEach((m) => M.tone(m, t, 2, { vel: 0.14, pad: style === 'pad' }));
-  }
+  /* Drawing & playback come from the shared music UI */
+  const { voicingSVG, rollSVG, playRoll, playVoicing } = window.MusicUI;
 
   /* ======================= Directory ======================= */
   const GROUPS = {

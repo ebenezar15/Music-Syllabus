@@ -19,6 +19,28 @@ An interactive app for organising, structuring and scheduling a music teaching s
 
 Progress, notes, ticked exercises and plans are saved in your browser (localStorage). Chord Library entries, recordings and captures are saved in your browser's IndexedDB. Use **Back up library** to keep a copy or move it to another device.
 
+## Riffbook ✎ (`riffbook/index.html`)
+
+A separate app: your personal notebook for **your own improvisations, chord movements and hand placements**. It works like a notes app, with musical blocks and your own comments.
+
+- **Notes:** each note has a title, type (Improvisation, Chord movement, Placement, Lick/run, Idea, Song arrangement), status (New idea → Practising → Ready to use → Mastered), key, tempo, notebook and tags. You can pin and favourite notes.
+- **Writing:** simple formatting (`# heading`, `**bold**`, `- list`). Write `[Cmaj7]` and it becomes a chord you can tap. Write `[[Note title]]` to link another note. Backlinks show which notes link to this one.
+- **Blocks:** you can add six kinds:
+  - chord progressions you can play (block, broken, arpeggio or pad)
+  - hand placements on a keyboard diagram, with left/right hand and finger numbers, and the chord named for you
+  - piano-roll takes recorded from computer keys, the on-screen keys or a MIDI keyboard (count-in, click, quantise)
+  - microphone recordings or uploaded audio
+  - images
+  - checklists
+- **My comments:** timestamped personal comments, each marked as 💡 idea, ✅ works, ⚠️ tricky, ❤️ love it or ❓ question. A comment can point at one block of the note.
+- **Practice:** each note has a practice log (minutes, tempo, how it went), totals, and a tempo progress chart. **Practice mode** gives you a timer, a metronome and the note's chords on a loop, then logs the session. The sidebar shows a 12-week practice heatmap.
+- **View in any key:** chords, placements and piano rolls in a note can be shown in any key. Make that key permanent with one tap.
+- **Organising:** smart lists (All, Pinned, Favourites, Practising, **Revisit** for notes you haven't practised in a week, Mastered), plus types, notebooks and tags. You can search and sort.
+- **Starting notes:** templates (Improvisation, Chord movement, Hand placement, Lick, Song, Blank), and a **Quick idea** button that records audio straight into a new note.
+- **Shortcuts and data:** `N` makes a new note and `/` jumps to search. Back up and restore as a JSON file, recordings included. The same 9 colour schemes and Avenir Next typography as Syllabus Studio.
+
+Notes are saved in your browser (IndexedDB). In the published version they live in your own private storage.
+
 ## Fonts: Avenir Next
 
 The app uses **Avenir Next** everywhere. It is built into Apple devices (Mac, iPhone, iPad), so it shows there automatically. Avenir Next is a licensed font. To use it on Windows or Android, put your licensed files in a `fonts/` folder (`AvenirNext-Regular.woff2`, `-Medium`, `-DemiBold`, `-Bold`). Then add `url('../fonts/<file>.woff2') format('woff2')` to the matching `@font-face` rules at the top of `css/styles.css`. Without those files, the app falls back to Nunito Sans, which looks similar.
@@ -34,6 +56,8 @@ js/topics/*.js        lesson content (one file per module)
 js/app.js             UI: router, views, tools
 js/library.js         Chord Library: storage, directory, editor, piano-roll capture, recordings
 js/library-seed.js    starter library entries
+js/music-ui.js        shared keyboard diagrams, piano rolls, note input (Chord Library + Riffbook)
+riffbook/             Riffbook app (index.html, riffbook.css, riffbook.js)
 ```
 
 ### Adding or editing a lesson

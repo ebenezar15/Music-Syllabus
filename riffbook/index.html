@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en" data-scheme="midnight">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Riffbook</title>
+  <meta name="description" content="A personal notebook for your improvisations, chord movements and hand placements, with playable chords, fingering diagrams, piano-roll takes, recordings, comments and a practice log.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- Nunito Sans is only a fallback for devices without Avenir Next -->
+  <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%E2%9C%8E%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="../css/styles.css">
+  <link rel="stylesheet" href="riffbook.css">
+</head>
+<body class="riffbook">
+  <div class="rb">
+    <aside class="rb-rail" id="rail" aria-label="Notebooks and filters"></aside>
+    <section class="rb-list" id="list-pane" aria-label="Notes"></section>
+    <main class="rb-note" id="note-pane" aria-label="Note"></main>
+  </div>
+  <div class="scrim" id="scrim"></div>
+  <div class="overlay" id="templates" hidden></div>
+  <div class="overlay practice-ov" id="practice" hidden></div>
+  <div class="toast" id="toast" role="status"></div>
+
+  <script src="../js/music.js"></script>
+  <script src="../js/music-ui.js"></script>
+  <script src="riffbook.js"></script>
+</body>
+</html>
