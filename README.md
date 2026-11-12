@@ -39,6 +39,19 @@ A separate app: your personal notebook for **your own improvisations, chord move
 - **Starting notes:** templates (Improvisation, Chord movement, Hand placement, Lick, Song, Blank), and a **Quick idea** button that records audio straight into a new note.
 - **Shortcuts and data:** `N` makes a new note and `/` jumps to search. Back up and restore as a JSON file, recordings included. The same 9 colour schemes and Avenir Next typography as Syllabus Studio.
 
+### Capturing from your MIDI keyboard
+
+Plug a USB/Bluetooth MIDI keyboard into your computer, open the app from this repository in **Chrome or Edge**, and either click **🎹 MIDI capture** in Riffbook or **Connect MIDI keyboard** in the Chord Library editor. Then:
+
+- **Live chord names:** the name of whatever you're holding shows up as you play, for example `Cmaj7/E` or `Dm9`.
+- **The whole movement:** recording starts on your first note, with no count-in. Notes, timing, velocity and the **sustain pedal** are all recorded.
+- **Chord detection:** when you stop, the take is split into chords. Each chord is named and marked on the piano roll, and you can tap to hear any of them. One tap adds them as a **playable progression** (`C F/A G/B C`), or as **keyboard diagrams of each voicing**.
+- **Grab what I hold:** on a hand placement, hold a chord and let go. The exact voicing and its name are captured.
+
+How it detects chords: a new chord starts when two or more notes are struck together, or when the bass moves. Single notes over a held chord count as melody or passing notes. A held bass under changing right-hand chords works (Am then Am7). Broken or arpeggiated patterns are detected best with the sustain pedal down.
+
+MIDI needs a secure page: `file://`, `http://localhost`, or https. The simplest way is `python3 -m http.server` in this folder, then open `http://localhost:8000/riffbook/`. Browsers block MIDI inside the Claude artifact viewer, so the published links use the computer keys and the on-screen keyboard instead. Chord detection works the same there.
+
 Notes are saved in your browser (IndexedDB). In the published version they live in your own private storage.
 
 ## Fonts: Avenir Next

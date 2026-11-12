@@ -426,6 +426,7 @@ window.LibraryModule = function (App) {
           <label>Split at <select id="ed-split">${[48, 53, 55, 57, 60, 62, 64].map((m) => `<option value="${m}" ${m === 60 ? 'selected' : ''}>${noteName(m)}</option>`).join('')}</select></label>
           <label>Build from symbol <select id="ed-preset"><option value="">Choose a voicing style…</option>${Object.keys(PRESETS).map((p) => `<option>${p}</option>`).join('')}</select></label>
           <span id="ed-detect" class="muted"></span>
+          <span class="live-pill" id="ed-live" hidden></span>
         </div>
         <div class="lib-input-kb" id="ed-kb">${App.pianoHTML(36, 96)}</div>
         <div id="ed-notes" class="small" style="margin-top:8px"></div>
@@ -512,20 +513,36 @@ window.LibraryModule = function (App) {
     function noteOn(m, vel = 96) {
       M.tone(m, 0, 1.1, { vel: 0.08 + vel / 700 });
       const key = $(`.piano [data-midi="${m}"]`, kbRoot); if (key) key.classList.add('hit');
-      if (rec.on) rec.active.set(m, { t: performance.now(), v: vel });
-      held.add(m); grabbed.add(m);
+      if (rec.on) { if (rec.active.has(m)) finishNote(m); rec.active.set(m, { t: performance.now(), v: vel }); }
+      held.add(m); grabbed.add(m); sustained.delete(m);
+      showLive();
+    }
+    let pedalDown = false;
+    const sustained = new Set();
+    function finishNote(m) {
+      const a = rec.active.get(m); if (!a) return;
+      rec.active.delete(m); sustained.delete(m);
+      const spb = 60000 / rec.bpm;
+      rec.events.push({ m, t: Math.max(0, (a.t - rec.start) / spb), d: Math.max(0.05, (performance.now() - a.t) / spb), v: a.v });
+      drawPreview();
+    }
+    function showLive() {
+      const name = window.MusicUI.liveName(new Set([...held, ...sustained]), flat());
+      const el = $('#ed-live'); if (el) { el.textContent = name ? '🎹 ' + name : ''; el.hidden = !name; }
+    }
+    function pedal(down) {
+      pedalDown = down;
+      if (!down) Array.from(sustained).forEach((m) => { if (rec.active.has(m)) finishNote(m); else sustained.delete(m); });
+      showLive();
     }
     function noteOff(m) {
       const key = $(`.piano [data-midi="${m}"]`, kbRoot); if (key) key.classList.remove('hit');
       held.delete(m);
-      if (rec.on && rec.active.has(m)) {
-        const a = rec.active.get(m); rec.active.delete(m);
-        const spb = 60000 / rec.bpm;
-        rec.events.push({ m, t: Math.max(0, (a.t - rec.start) / spb), d: Math.max(0.05, (performance.now() - a.t) / spb), v: a.v });
-        drawPreview();
-      }
+      if (pedalDown) sustained.add(m);
+      else if (rec.on && rec.active.has(m)) finishNote(m);
       if (!rec.on && held.size === 0 && grabbed.size > 1) { setNotes(Array.from(grabbed)); toast('Voicing grabbed'); }
       if (held.size === 0) grabbed.clear();
+      showLive();
     }
     // On-screen keyboard: tap toggles notes in the voicing; while recording it plays notes into the roll
     $$('.piano [data-midi]', kbRoot).forEach((k) => {
@@ -557,7 +574,7 @@ window.LibraryModule = function (App) {
         midiAccess = await navigator.requestMIDIAccess();
         const hook = () => {
           let n = 0;
-          midiAccess.inputs.forEach((inp) => { n++; inp.onmidimessage = (msg) => { const [st, note, vel] = msg.data; const cmd = st & 0xf0; if (cmd === 0x90 && vel > 0) noteOn(note, vel); else if (cmd === 0x80 || (cmd === 0x90 && vel === 0)) noteOff(note); }; });
+          midiAccess.inputs.forEach((inp) => { n++; inp.onmidimessage = (msg) => { const [st, note, vel] = msg.data; const cmd = st & 0xf0; if (cmd === 0x90 && vel > 0) noteOn(note, vel); else if (cmd === 0x80 || (cmd === 0x90 && vel === 0)) noteOff(note); else if (cmd === 0xB0 && note === 64) pedal(vel >= 64); }; });
           $('#midi-status').textContent = n ? `Connected: ${Array.from(midiAccess.inputs.values()).map((i) => i.name).join(', ')}` : 'No MIDI keyboard found. Plug one in and it will connect.';
         };
         midiAccess.onstatechange = hook; hook();
@@ -572,12 +589,20 @@ window.LibraryModule = function (App) {
     }
     function drawPreview() {
       if (!rec.events.length && !rec.on) { $('#cap-preview').innerHTML = ''; return; }
-      $('#cap-preview').innerHTML = `<div class="roll-item recording"><div class="small muted">${rec.on ? '● Recording…' : 'Take ready'} · ${rec.events.length} notes</div>${rollSVG({ events: rec.events, bpm: rec.bpm }, { row: 7, ppb: 28 })}
-        ${!rec.on && rec.events.length ? `<div class="row" style="margin-top:8px"><button class="btn sm" id="take-play">▶ Play take</button><button class="btn sm primary" id="take-keep">Keep capture</button><button class="btn sm" id="take-voicing">Use first chord as voicing</button><button class="btn sm ghost" id="take-drop">Discard</button></div>` : ''}</div>`;
+      const segs = rec.on ? [] : window.MusicUI.segmentChords(rec.events, { flat: flat(), split });
+      const named = segs.filter((sg) => sg.name && M.parseChord(sg.name));
+      $('#cap-preview').innerHTML = `<div class="roll-item recording"><div class="small muted">${rec.on ? '● Recording…' : 'Take ready'} · ${rec.events.length} notes</div>${rollSVG({ events: rec.events, bpm: rec.bpm }, { row: 7, ppb: 28, segments: segs })}
+        ${segs.length ? `<div class="small muted" style="margin-top:8px">Chords found: ${segs.map((sg) => `<b>${esc(sg.name ? M.pretty(sg.name) : '?')}</b>`).join(' → ')}</div>` : ''}
+        ${!rec.on && rec.events.length ? `<div class="row" style="margin-top:8px"><button class="btn sm" id="take-play">▶ Play take</button><button class="btn sm primary" id="take-keep">Keep capture</button><button class="btn sm" id="take-voicing">Use first chord as voicing</button>${named.length ? '<button class="btn sm" id="take-prog">Use chords as progression</button>' : ''}<button class="btn sm ghost" id="take-drop">Discard</button></div>` : ''}</div>`;
+      if ($('#take-prog')) $('#take-prog').onclick = () => {
+        $('#ed-prog').value = named.map((sg) => sg.name).join(' ');
+        if (!$('#ed-symbol').value.trim()) { $('#ed-symbol').value = named[0].name; symHelp(); }
+        setNotes(named[0].notes); markDirty(); toast('Progression filled in from your take');
+      };
       if ($('#take-play')) {
         $('#take-play').onclick = () => playRoll({ events: quantise(rec.events), bpm: rec.bpm }, $('#cap-preview svg'));
         $('#take-keep').onclick = () => { e.rolls = (e.rolls || []).concat([{ id: uid('r'), name: 'Capture ' + ((e.rolls || []).length + 1), bpm: rec.bpm, events: quantise(rec.events), created: Date.now() }]); rec.events = []; markDirty(); drawPreview(); drawRolls(); toast('Capture added — save the entry to keep it'); };
-        $('#take-voicing').onclick = () => { const first = Math.min(...rec.events.map((x) => x.t)); setNotes(rec.events.filter((x) => x.t - first < 0.35).map((x) => x.m)); };
+        $('#take-voicing').onclick = () => { if (segs.length) { setNotes(segs[0].notes); return; } const first = Math.min(...rec.events.map((x) => x.t)); setNotes(rec.events.filter((x) => x.t - first < 0.35).map((x) => x.m)); };
         $('#take-drop').onclick = () => { rec.events = []; drawPreview(); };
       }
     }

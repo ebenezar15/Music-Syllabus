@@ -268,6 +268,7 @@
       <div class="rail-actions">
         <button class="btn primary" id="new-note">＋ New note</button>
         <button class="btn" id="quick-audio" title="Record an audio idea straight into a new note">🎙 Quick idea</button>
+        <button class="btn" id="midi-capture" title="Record what you play on your MIDI keyboard into a new note — chords are named for you">🎹 MIDI capture</button>
       </div>
       <div class="rail-sec">Library</div>
       ${Object.entries(SMART).map(([k, s]) => item(`data-list="${k}" title="${esc(s.hint || '')}"`, ui.list === k && !ui.notebook && !ui.tag && !ui.type, s.icon, s.label, all.filter(s.test).length)).join('')}
@@ -292,6 +293,7 @@
     $$('[data-theme]', $('#rail')).forEach((b) => b.onclick = () => setTheme(b.dataset.theme));
     $('#new-note').onclick = () => openTemplates();
     $('#quick-audio').onclick = quickAudio;
+    $('#midi-capture').onclick = midiCapture;
     if ($('#backup')) { $('#backup').onclick = backup; $('#restore').onchange = (e) => restore(e.target.files[0]); }
   }
   function heatmap(all) {
@@ -375,6 +377,7 @@
       <div class="ed-top">
         <button class="btn sm ghost mobile-only" id="back">← Notes</button>
         <span class="small muted" id="save-state">${n._dirty ? 'Editing…' : 'Saved'}</span>
+        <span class="live-pill" id="live-top" ${rollRec.live ? '' : 'hidden'}>${rollRec.live ? '🎹 ' + esc(rollRec.live) : ''}</span>
         <div class="row" style="gap:6px;margin-left:auto">
           <button class="icon-btn ${n.pinned ? 'on' : ''}" id="pin" title="Pin" aria-pressed="${!!n.pinned}">📌</button>
           <button class="icon-btn ${n.favourite ? 'on' : ''}" id="fav" title="Favourite" aria-pressed="${!!n.favourite}">★</button>
@@ -470,18 +473,25 @@
           <span class="seg" role="group" aria-label="Hand"><button data-hand="lh" aria-pressed="${placeTool.hand === 'lh'}">Left hand</button><button data-hand="rh" aria-pressed="${placeTool.hand === 'rh'}">Right hand</button></span>
           <span class="seg" role="group" aria-label="Finger">${['1', '2', '3', '4', '5', ''].map((f) => `<button data-finger="${f}" aria-pressed="${placeTool.finger === f}">${f || 'No #'}</button>`).join('')}</span>
           <button class="btn sm" data-playplace="${i}">▶ Hear</button>
+          <button class="btn sm ${grab.block === b.id ? 'primary' : ''}" data-grab="${i}" title="Hold a chord on your MIDI or computer keys; it is captured when you let go">${grab.block === b.id ? '🎹 Holding… let go to capture' : '🎹 Grab what I hold'}</button>
         </div>
         <div class="row small" style="margin-top:6px"><label>Chord <input type="text" data-symbol="${i}" value="${esc(b.symbol || '')}" placeholder="${esc(guess || 'e.g. Cadd9')}" style="width:110px"></label>${guess ? `<span class="muted">Sounds like <b>${esc(M.pretty(guess))}</b></span>` : '<span class="muted">Tap keys to place notes; tap again to remove.</span>'}${semis ? '<span class="muted">· shown transposed (editing is off)</span>' : ''}</div>`;
     } else if (b.kind === 'roll') {
       const roll = b.roll || { bpm: n.bpm || 80, events: [] };
       const shown = semis ? { ...roll, events: roll.events.map((e) => ({ ...e, m: e.m + semis })) } : roll;
-      body = `${U.rollSVG(shown, { row: 7, ppb: 28 })}
+      const recording = rollRec.block === b.id;
+      const segs = recording ? [] : U.segmentChords(shown.events, { flat: keyFlat(ui.viewKey || n.key || 'C') });
+      body = `${recording ? `<div class="live-chord" data-live="${i}" aria-live="polite">${esc(rollRec.live || (rollRec.rec && rollRec.rec.armed ? 'Waiting — start playing' : 'Play…'))}</div>` : ''}${U.rollSVG(shown, { row: 7, ppb: 28, segments: segs })}
         <div class="row small" style="margin-top:8px"><button class="btn sm" data-playroll="${i}" ${roll.events.length ? '' : 'disabled'}>▶ Play</button>
         <button class="btn sm" data-recroll="${i}">${rollRec.block === b.id ? '■ Stop' : '● Record a take'}</button>
         <label>Tempo <input type="number" data-rollbpm="${i}" value="${roll.bpm || n.bpm || 80}" min="40" max="220" style="width:64px"></label>
         <label>Quantise <select data-rollq="${i}"><option value="0">Off</option><option value="0.25">1/16</option><option value="0.5" selected>1/8</option></select></label>
-        <button class="btn sm ghost" data-midi="${i}">🎹 MIDI</button><span class="muted" data-rollstatus="${i}">${rollRec.block === b.id ? rollRec.status : 'Play with computer keys A W S E D F T G Y H U J K (Z/X octave) or a MIDI keyboard.'}</span></div>
-        ${rollRec.block === b.id ? `<div class="mini-input">${U.voicingSVG({ lh: [], rh: [] }, { from: 48, to: 83, w: 22, h: 70 })}</div>` : ''}`;
+        <label>Start <select data-rollstart="${i}"><option value="free" ${midiState.connected ? 'selected' : ''}>When I start playing</option><option value="count" ${midiState.connected ? '' : 'selected'}>Count-in + click</option></select></label>
+        <button class="btn sm ghost" data-midi="${i}">${midiState.connected ? '🎹 MIDI on' : '🎹 Connect MIDI'}</button><span class="muted" data-rollstatus="${i}">${rollRec.block === b.id ? rollRec.status : 'Play with computer keys A W S E D F T G Y H U J K (Z/X octave) or a MIDI keyboard.'}</span></div>
+        ${recording ? `<div class="mini-input">${U.voicingSVG({ lh: [], rh: [] }, { from: 48, to: 83, w: 22, h: 70 })}</div>` : ''}
+        ${segs.length ? `<div class="analysis"><div class="small muted">Chords found in this take (${segs.length}) — tap to hear</div>
+          <div class="chips">${segs.map((sg, j) => `<button class="chip" data-segplay="${i}:${j}" title="${esc(sg.notes.map((m) => U.noteName(m, keyFlat(ui.viewKey || n.key || 'C'))).join(' '))}">${esc(sg.name ? M.pretty(sg.name) : '?')}<small>beat ${+(sg.t + 1).toFixed(2)}</small></button>`).join('')}</div>
+          <div class="row small" style="margin-top:8px"><button class="btn sm" data-seg2prog="${i}">＋ Add as chord progression</button><button class="btn sm" data-seg2place="${i}">＋ Add voicings as placements</button></div></div>` : ''}`;
     } else if (b.kind === 'audio') {
       body = b.ref ? `<audio controls preload="none" data-ref="${esc(b.ref)}"></audio>`
         : `<div class="row small"><button class="btn sm" data-mic="${i}">${micRec.block === b.id ? '■ Stop recording' : '🎙 Record'}</button><label class="btn sm">⬆ Upload<input type="file" data-upaudio="${i}" accept="audio/*,video/webm,video/mp4,.m4a,.webm" hidden></label><span class="muted" data-mstatus="${i}">${micRec.block === b.id ? '● Recording…' : ''}</span></div>`;
@@ -496,7 +506,10 @@
   }
 
   const placeTool = { hand: 'rh', finger: '' };
-  const rollRec = { block: null, status: '', rec: null, input: null };
+  const rollRec = { block: null, status: '', rec: null, input: null, live: '' };
+  const midiState = { connected: false, message: '' };
+  const live = { held: new Set(), sustained: new Set(), pedal: false, grabbed: new Set() };
+  const grab = { block: null };
   const micRec = { block: null, mr: null };
 
   function tempoChart(n) {
@@ -609,9 +622,35 @@
     $$('[data-playroll]').forEach((x) => x.onclick = () => { const b = B(x.dataset.playroll); U.playRoll(b.roll, x.closest('.blk').querySelector('.roll-svg'), semis); });
     $$('[data-rollbpm]').forEach((inp) => inp.onchange = () => { B(inp.dataset.rollbpm).roll.bpm = +inp.value || 80; markDirty(); });
     $$('[data-midi]').forEach((x) => x.onclick = async () => {
-      ensureInput();
-      const r = await rollRec.input.connectMidi();
+      const r = await connectMidi();
+      renderEditor();
       const st = $(`[data-rollstatus="${x.dataset.midi}"]`); if (st) st.textContent = r.message;
+    });
+    const segsOf = (i) => U.segmentChords(B(i).roll.events, { flat: keyFlat(n.key || 'C') });
+    $$('[data-segplay]').forEach((x) => x.onclick = () => { const [i, j] = x.dataset.segplay.split(':'); const sg = U.segmentChords(B(i).roll.events.map((e) => ({ ...e, m: e.m + semis })))[+j]; if (sg) U.playVoicing(sg.lh, sg.rh); });
+    $$('[data-seg2prog]').forEach((x) => x.onclick = () => {
+      const segs = segsOf(x.dataset.seg2prog).filter((sg) => sg.name && M.parseChord(sg.name));
+      if (!segs.length) { toast('No nameable chords in this take'); return; }
+      const ds = segs.map((sg) => sg.d).sort((a, c) => a - c), med = ds[Math.floor(ds.length / 2)];
+      const beats = [1, 2, 4, 8].reduce((best, v) => (Math.abs(v - med) < Math.abs(best - med) ? v : best), 4);
+      n.blocks.splice(+x.dataset.seg2prog + 1, 0, { id: uid('b'), kind: 'chords', label: 'Chords from ' + (B(x.dataset.seg2prog).label || 'take'), prog: segs.map((sg) => sg.name).join(' '), beats });
+      markDirty(true); toast('Added ' + segs.length + ' chords');
+    });
+    $$('[data-seg2place]').forEach((x) => x.onclick = () => {
+      const seen = new Set(), add = [];
+      segsOf(x.dataset.seg2place).forEach((sg) => { const k = sg.notes.join(','); if (!seen.has(k) && add.length < 8) { seen.add(k); add.push({ id: uid('b'), kind: 'placement', label: sg.name || 'Voicing', symbol: sg.name || '', lh: sg.lh, rh: sg.rh, fingers: {} }); } });
+      n.blocks.splice(+x.dataset.seg2place + 1, 0, ...add);
+      markDirty(true); toast('Added ' + add.length + ' voicings');
+    });
+    $$('[data-grab]').forEach((x) => x.onclick = async () => {
+      const b = B(x.dataset.grab);
+      if (grab.block === b.id) { grab.block = null; renderEditor(); return; }
+      if (semis) { toast('Switch back to the note\'s key to capture a placement'); return; }
+      ensureInput();
+      if (!midiState.connected && navigator.requestMIDIAccess) await connectMidi();
+      grab.block = b.id; live.grabbed.clear();
+      renderEditor();
+      toast('Hold the chord, then let go');
     });
     $$('[data-recroll]').forEach((x) => x.onclick = () => toggleRollRecord(n, B(x.dataset.recroll), x.dataset.recroll));
     if (rollRec.block) $$('.mini-input rect[data-m]', pane).forEach((r) => {
@@ -655,23 +694,68 @@
   }
 
   /* ---------- live input for piano-roll takes ---------- */
+  const liveFlat = () => keyFlat((current && (ui.viewKey || current.key)) || 'C');
+  function showLive() {
+    const name = U.liveName(new Set([...live.held, ...live.sustained]), liveFlat());
+    rollRec.live = name;
+    $$('[data-live]').forEach((el) => { el.textContent = name || (rollRec.rec && rollRec.rec.armed ? 'Waiting — start playing' : '…'); });
+    const top = $('#live-top'); if (top) { top.textContent = name ? '🎹 ' + name : ''; top.hidden = !name; }
+  }
   function liveOn(m, v) {
-    M.tone(m, 0, 1.0, { vel: 0.08 + v / 700 });
+    if (!midiState.quiet) M.tone(m, 0, 1.0, { vel: 0.08 + v / 700 });
     if (rollRec.rec) rollRec.rec.noteOn(m, v);
+    live.held.add(m); live.sustained.delete(m); live.grabbed.add(m);
     const k = $(`.mini-input rect[data-m="${m}"]`); if (k) k.style.filter = 'brightness(.75)';
+    showLive();
   }
   function liveOff(m) {
     if (rollRec.rec) rollRec.rec.noteOff(m);
+    live.held.delete(m);
+    if (live.pedal) live.sustained.add(m);
     const k = $(`.mini-input rect[data-m="${m}"]`); if (k) k.style.filter = '';
+    if (!live.held.size) {
+      if (grab.block && live.grabbed.size > 1) applyGrab(Array.from(live.grabbed));
+      live.grabbed.clear();
+    }
+    showLive();
+  }
+  function livePedal(down) {
+    live.pedal = down;
+    if (rollRec.rec) rollRec.rec.pedal(down);
+    if (!down) live.sustained.clear();
+    showLive();
+  }
+  function applyGrab(notes) {
+    const n = current; if (!n) return;
+    const b = (n.blocks || []).find((x) => x.id === grab.block);
+    grab.block = null;
+    if (!b) return;
+    const s = notes.slice().sort((a, c) => a - c);
+    const split = s.length > 1 && s[0] < 60 ? 60 : s[0] + 1;
+    b.lh = s.filter((m) => m < split); b.rh = s.filter((m) => m >= split); b.fingers = {};
+    if (!b.lh.length && b.rh.length > 1) b.lh = [b.rh.shift()];
+    const name = U.detectName(s, liveFlat());
+    if (name) { b.symbol = name; if (!b.label) b.label = name; }
+    toast('Captured ' + (name ? M.pretty(name) : s.length + ' notes'));
+    markDirty(true);
   }
   function ensureInput() {
-    if (!rollRec.input) rollRec.input = U.noteInput({ on: liveOn, off: liveOff, octave: (o) => toast('Octave ' + o) }, { enabled: () => !!rollRec.block });
+    if (!rollRec.input) rollRec.input = U.noteInput({ on: liveOn, off: liveOff, pedal: livePedal, octave: (o) => toast('Octave ' + o), midiChange: (names) => { midiState.connected = names.length > 0; } }, { enabled: () => !!rollRec.block || !!grab.block });
   }
-  function toggleRollRecord(n, b, i) {
+  async function connectMidi() {
+    ensureInput();
+    const r = await rollRec.input.connectMidi();
+    midiState.connected = r.ok && !/No MIDI/.test(r.message);
+    midiState.message = r.message;
+    toast(r.message);
+    return r;
+  }
+  function toggleRollRecord(n, b, i, forceFree) {
     ensureInput();
     if (rollRec.block === b.id) {
       rollRec.rec.stop();
-      const q = +$(`[data-rollq="${i}"]`).value;
+      if (!rollRec.rec.events.length) { rollRec.block = null; rollRec.rec = null; renderEditor(); toast('Nothing recorded'); return; }
+      const qEl = $(`[data-rollq="${i}"]`); const q = qEl ? +qEl.value : 0.5;
       const events = rollRec.rec.quantised(q);
       if (events.length) { b.roll = { bpm: rollRec.rec.bpm, events, recorded: Date.now() }; toast(`Saved a take with ${events.length} notes`); }
       rollRec.block = null; rollRec.rec = null;
@@ -681,9 +765,13 @@
     rollRec.rec = U.rollRecorder();
     rollRec.block = b.id; rollRec.status = 'Count-in…';
     rollRec.rec.onChange = () => { const st = $(`[data-rollstatus="${i}"]`); if (st) st.textContent = `● Recording · ${rollRec.rec.events.length} notes`; };
-    const bpm = +$(`[data-rollbpm="${i}"]`).value || n.bpm || 80;
+    const bpmEl = $(`[data-rollbpm="${i}"]`), startEl = $(`[data-rollstart="${i}"]`);
+    const bpm = (bpmEl && +bpmEl.value) || n.bpm || 80;
+    const free = forceFree || (startEl && startEl.value === 'free');
+    const started = () => { rollRec.status = '● Recording · press Stop when you finish'; const st = $(`[data-rollstatus="${i}"]`); if (st) st.textContent = rollRec.status; showLive(); };
+    if (free) { rollRec.rec.arm(bpm, started); rollRec.status = 'Waiting — recording starts on your first note'; }
     renderEditor();
-    rollRec.rec.begin(bpm, true, () => { rollRec.status = '● Recording · play now'; const st = $(`[data-rollstatus="${i}"]`); if (st) st.textContent = rollRec.status; });
+    if (!free) rollRec.rec.begin(bpm, true, started);
   }
 
   /* ---------- audio, images ---------- */
@@ -731,6 +819,20 @@
     await Store.add(n);
     select(n.id);
     toggleMic(n, b, 0);
+  }
+
+  async function midiCapture() {
+    if (rollRec.block) { toast('Finish the current take first'); return; }
+    const r = await connectMidi();
+    const n = newNote('improv');
+    n.title = 'MIDI capture ' + new Date().toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    n.body = 'Captured from my keyboard. Chords found in the take are listed under it.';
+    const b = { id: uid('b'), kind: 'roll', label: 'Take 1', roll: { bpm: n.bpm || 80, events: [] } };
+    n.blocks = [b];
+    await Store.add(n);
+    select(n.id);
+    toggleRollRecord(n, b, 0, true);
+    if (!r.ok || !midiState.connected) toast('No MIDI keyboard found — you can play on the computer keys (A S D F…)');
   }
 
   /* ---------- templates ---------- */

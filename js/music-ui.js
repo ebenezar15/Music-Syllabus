@@ -43,7 +43,7 @@
   function rollSVG(roll, opts = {}) {
     const ev = (roll && roll.events) || [];
     if (!ev.length) return '<div class="empty small">No notes captured yet.</div>';
-    const lo = Math.min(...ev.map((e) => e.m)) - 2, hi = Math.max(...ev.map((e) => e.m)) + 2;
+    const lo = Math.min(...ev.map((e) => e.m)) - 2, hi = Math.max(...ev.map((e) => e.m)) + (opts.segments && opts.segments.length ? 4 : 2);
     const len = Math.max(4, Math.ceil(Math.max(...ev.map((e) => e.t + e.d)) / 4) * 4);
     const row = opts.row || 9, ppb = opts.ppb || 36, gutter = 34;
     const H = (hi - lo + 1) * row, W = gutter + len * ppb;
@@ -57,6 +57,13 @@
     for (let b = 0; b <= len; b++) g += `<line x1="${gutter + b * ppb}" x2="${gutter + b * ppb}" y1="0" y2="${H}" stroke="var(--line)" stroke-width="${b % 4 === 0 ? 1.4 : 0.5}"/>`;
     ev.forEach((e) => {
       g += `<rect x="${gutter + e.t * ppb + 0.5}" y="${(hi - e.m) * row + 1}" width="${Math.max(3, e.d * ppb - 1)}" height="${row - 2}" rx="2" fill="${e.m < split ? 'var(--s)' : 'var(--accent)'}" opacity="${0.55 + (e.v || 90) / 300}"><title>${noteName(e.m)} · beat ${(e.t + 1).toFixed(2)}</title></rect>`;
+    });
+    (opts.segments || []).forEach((sg) => {
+      const x = gutter + sg.t * ppb;
+      const label = sg.name ? M.pretty(sg.name) : '?';
+      const w = Math.max(18, label.length * 6.4 + 8);
+      g += `<line x1="${x}" x2="${x}" y1="0" y2="${H}" stroke="var(--accent-2)" stroke-dasharray="3 3" stroke-width="1.2"/>`;
+      g += `<rect x="${x + 1}" y="1" width="${w}" height="14" rx="4" fill="var(--bg)" stroke="var(--accent-2)" stroke-width="1" opacity=".95"/><text x="${x + 5}" y="11.5" font-size="10" font-weight="700" fill="var(--text)">${esc(label)}</text>`;
     });
     g += `<line class="playhead" x1="${gutter}" x2="${gutter}" y1="0" y2="${H}" stroke="var(--accent-2)" stroke-width="2" opacity="0"/>`;
     return `<div class="roll-wrap"><svg class="roll-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" data-ppb="${ppb}" data-gutter="${gutter}" role="img" aria-label="Piano roll, ${ev.length} notes">${g}</svg></div>`;
@@ -146,7 +153,9 @@
             midi.inputs.forEach((inp) => {
               inp.onmidimessage = (msg) => {
                 const [st, note, vel] = msg.data; const cmd = st & 0xf0;
-                if (cmd === 0x90 && vel > 0) handlers.on(note, vel); else if (cmd === 0x80 || (cmd === 0x90 && vel === 0)) handlers.off(note);
+                if (cmd === 0x90 && vel > 0) handlers.on(note, vel);
+                else if (cmd === 0x80 || (cmd === 0x90 && vel === 0)) handlers.off(note);
+                else if (cmd === 0xB0 && note === 64 && handlers.pedal) handlers.pedal(vel >= 64);
               };
             });
           };
@@ -165,15 +174,31 @@
 
   /* Piano-roll recorder: count-in, optional click, quantise. */
   function rollRecorder() {
-    const r = { on: false, start: 0, bpm: 80, active: new Map(), events: [], timer: null, onChange: null };
-    r.noteOn = (m, v) => { if (r.on) r.active.set(m, { t: performance.now(), v: v || 96 }); };
-    r.noteOff = (m) => {
-      if (!r.on || !r.active.has(m)) return;
-      const a = r.active.get(m); r.active.delete(m);
+    const r = { on: false, armed: false, start: 0, bpm: 80, active: new Map(), events: [], timer: null, onChange: null, sustain: false, sustained: new Set() };
+    const end = (m) => {
+      const a = r.active.get(m); if (!a) return;
+      r.active.delete(m); r.sustained.delete(m);
       const spb = 60000 / r.bpm;
       r.events.push({ m, t: Math.max(0, (a.t - r.start) / spb), d: Math.max(0.05, (performance.now() - a.t) / spb), v: a.v });
       r.onChange && r.onChange();
     };
+    r.noteOn = (m, v) => {
+      if (r.armed) { r.armed = false; r.on = true; r.start = performance.now(); r.onStarted && r.onStarted(); }
+      if (!r.on) return;
+      if (r.active.has(m)) end(m); // re-struck while the pedal held it
+      r.active.set(m, { t: performance.now(), v: v || 96 });
+    };
+    r.noteOff = (m) => {
+      if (!r.on || !r.active.has(m)) return;
+      if (r.sustain) { r.sustained.add(m); return; } // pedal keeps it ringing
+      end(m);
+    };
+    r.pedal = (down) => {
+      r.sustain = down;
+      if (!down) Array.from(r.sustained).forEach(end);
+    };
+    // Free-time take: recording starts on the first note you play (no count-in)
+    r.arm = (bpm, onStarted) => { r.bpm = bpm; r.events = []; r.armed = true; r.onStarted = onStarted; };
     r.begin = (bpm, click, onStarted) => {
       const c = M.audio(); if (!c) return;
       r.bpm = bpm; r.events = [];
@@ -190,7 +215,8 @@
     };
     r.stop = () => {
       clearTimeout(r.pending); clearInterval(r.timer);
-      Array.from(r.active.keys()).forEach(r.noteOff);
+      r.sustain = false; r.armed = false;
+      Array.from(r.active.keys()).forEach(end);
       r.on = false;
     };
     r.quantised = (q) => (q ? r.events.map((x) => ({ m: x.m, v: x.v, t: Math.round(x.t / q) * q, d: Math.max(q, Math.round(x.d / q) * q) }))
@@ -198,5 +224,45 @@
     return r;
   }
 
-  window.MusicUI = { WHITE, esc, noteName, voicingSVG, rollSVG, playRoll, playVoicing, spellerFor, detectName, noteInput, rollRecorder, KEYMAP };
+  /* Split a take into chords. events: [{m, t, d}] in beats.
+     A new chord starts when 2+ notes are struck together (within `win` beats) or the bass moves.
+     Single notes over a held chord count as melody / passing notes. */
+  function segmentChords(events, opts = {}) {
+    const win = opts.win || 0.3, split = opts.split || 60, flat = opts.flat;
+    const ev = (events || []).slice().sort((a, b) => a.t - b.t);
+    if (!ev.length) return [];
+    const groups = [];
+    ev.forEach((e) => { const g = groups[groups.length - 1]; if (g && e.t - g.t <= win) g.notes.push(e); else groups.push({ t: e.t, notes: [e] }); });
+    const segs = [];
+    groups.forEach((g) => {
+      const at = g.t + win;
+      const sounding = ev.filter((e) => g.notes.includes(e) || (e.t <= at && e.t + e.d > at));
+      const set = Array.from(new Set(sounding.map((e) => e.m))).sort((a, b) => a - b);
+      const struck = g.notes.map((e) => e.m);
+      const prev = segs[segs.length - 1];
+      const bassMoved = prev && struck.includes(set[0]) && set[0] !== prev.notes[0];
+      if (set.length < 2 || (prev && struck.length < 2 && !bassMoved)) { if (prev) prev.melody.push(...struck); return; }
+      const key = Array.from(new Set(set.map((m) => m % 12))).sort((a, b) => a - b).join(',') + '/' + (set[0] % 12);
+      if (prev && prev.key === key) { prev.melody.push(...struck.filter((m) => !prev.notes.includes(m))); return; }
+      segs.push({ t: g.t, notes: set, key, melody: [] });
+    });
+    const last = Math.max(...ev.map((e) => e.t + e.d));
+    segs.forEach((sg, i) => {
+      sg.d = +((segs[i + 1] ? segs[i + 1].t : last) - sg.t).toFixed(3);
+      sg.name = detectName(sg.notes, flat);
+      sg.lh = sg.notes.filter((m) => m < split);
+      sg.rh = sg.notes.filter((m) => m >= split);
+      if (!sg.lh.length && sg.rh.length > 1) { sg.lh = [sg.rh.shift()]; }
+    });
+    return segs;
+  }
+  // A readable name for whatever is held right now
+  function liveName(midis, flat) {
+    const s = Array.from(midis).sort((a, b) => a - b);
+    if (!s.length) return '';
+    if (s.length === 1) return M.pretty(noteName(s[0], flat));
+    return M.pretty(detectName(s, flat) || s.map((m) => M.nameOf(m % 12, flat)).join('–'));
+  }
+
+  window.MusicUI = { WHITE, esc, noteName, voicingSVG, rollSVG, playRoll, playVoicing, spellerFor, detectName, noteInput, rollRecorder, KEYMAP, segmentChords, liveName };
 })();
