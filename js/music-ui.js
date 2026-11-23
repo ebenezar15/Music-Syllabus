@@ -189,14 +189,23 @@
     };
   }
 
-  /* Piano-roll recorder: count-in, optional click, quantise. */
+  // Metronome accent for pulse k of a bar: 2 = downbeat, 1 = secondary accent in compound/odd metres, 0 = other
+  function accentOf(k, beats) {
+    if (k === 0) return 2;
+    if ((beats === 6 || beats === 12) && k % 3 === 0) return 1;
+    if (beats === 5 && k === 3) return 1;
+    return 0;
+  }
+
+  /* Piano-roll recorder: count-in, metronome, time signature, pickup notes, sustain pedal, quantise.
+     Times are in beats from the first downbeat after the count-in; pickup notes are negative. */
   function rollRecorder() {
-    const r = { on: false, armed: false, start: 0, bpm: 80, active: new Map(), events: [], timer: null, onChange: null, sustain: false, sustained: new Set() };
+    const r = { on: false, armed: false, start: 0, bpm: 80, beats: 4, active: new Map(), events: [], timer: null, timers: [], onChange: null, sustain: false, sustained: new Set() };
     const end = (m) => {
       const a = r.active.get(m); if (!a) return;
       r.active.delete(m); r.sustained.delete(m);
       const spb = 60000 / r.bpm;
-      r.events.push({ m, t: Math.max(0, (a.t - r.start) / spb), d: Math.max(0.05, (performance.now() - a.t) / spb), v: a.v });
+      r.events.push({ m, t: (a.t - r.start) / spb, d: Math.max(0.05, (performance.now() - a.t) / spb), v: a.v });
       r.onChange && r.onChange();
     };
     r.noteOn = (m, v) => {
@@ -215,26 +224,46 @@
       if (!down) Array.from(r.sustained).forEach(end);
     };
     // Free-time take: recording starts on the first note you play (no count-in)
-    r.arm = (bpm, onStarted) => { r.bpm = bpm; r.events = []; r.armed = true; r.onStarted = onStarted; };
-    r.begin = (bpm, click, onStarted) => {
+    r.arm = (bpm, onStarted) => { r.bpm = bpm; r.events = []; r.armed = true; r.onStarted = onStarted; r.counted = false; };
+    // Count-in take. opts: {bpm, beats, countBars, click, onStarted(), onBeat(bar, beat, countIn)}
+    r.begin = (bpmOrOpts, click, onStarted) => {
+      const o = typeof bpmOrOpts === 'object' ? bpmOrOpts : { bpm: bpmOrOpts, click, onStarted, beats: 4, countBars: 1 };
       const c = M.audio(); if (!c) return;
-      r.bpm = bpm; r.events = [];
-      const spb = 60 / bpm, t0 = c.currentTime + 0.1;
-      for (let i = 0; i < 4; i++) M.click(t0 + i * spb, i === 0);
-      r.pending = setTimeout(() => {
-        r.on = true; r.start = performance.now();
-        if (click) {
-          let next = M.audio().currentTime + 0.02, beat = 0;
-          r.timer = setInterval(() => { const cc = M.audio(); while (next < cc.currentTime + 0.1) { M.click(next, beat % 4 === 0); next += spb; beat++; } }, 25);
+      r.bpm = o.bpm; r.beats = o.beats || 4; r.events = []; r.counted = true;
+      const spb = 60 / r.bpm, countBeats = Math.max(0, Math.round((o.countBars == null ? 1 : o.countBars) * r.beats));
+      const t0 = c.currentTime + 0.12, downbeat = t0 + countBeats * spb;
+      // Listen from the start of the count-in so pickup notes are kept (they get negative times)
+      r.on = true; r.start = performance.now() + (downbeat - c.currentTime) * 1000;
+      const at = (when, fn) => r.timers.push(setTimeout(fn, Math.max(0, (when - M.audio().currentTime) * 1000)));
+      for (let i = 0; i < countBeats; i++) {
+        const k = i % r.beats;
+        M.click(t0 + i * spb, accentOf(k, r.beats));
+        if (o.onBeat) at(t0 + i * spb, () => o.onBeat(Math.floor(i / r.beats) - Math.ceil(countBeats / r.beats), k, true));
+      }
+      at(downbeat, () => { o.onStarted && o.onStarted(); });
+      let next = downbeat, beat = 0;
+      r.timer = setInterval(() => {
+        const cc = M.audio();
+        while (next < cc.currentTime + 0.1) {
+          const k = beat % r.beats, bar = Math.floor(beat / r.beats), when = next;
+          if (o.click !== false) M.click(when, accentOf(k, r.beats));
+          if (o.onBeat) at(when, () => o.onBeat(bar, k, false));
+          next += spb; beat++;
         }
-        onStarted && onStarted();
-      }, (t0 - c.currentTime + 4 * spb) * 1000);
+      }, 25);
     };
     r.stop = () => {
-      clearTimeout(r.pending); clearInterval(r.timer);
+      clearTimeout(r.pending); clearInterval(r.timer); r.timers.forEach(clearTimeout); r.timers = [];
       r.sustain = false; r.armed = false;
       Array.from(r.active.keys()).forEach(end);
       r.on = false;
+    };
+    // Shift a take so no time is negative; returns {events, downbeat} where downbeat is the beat where bar 1 starts
+    r.take = (q) => {
+      const ev = r.quantised(q);
+      const minT = Math.min(0, ...ev.map((x) => x.t));
+      const downbeat = minT < 0 ? Math.ceil(-minT - 1e-6) : 0;
+      return { events: ev.map((x) => ({ ...x, t: +(x.t + downbeat).toFixed(3) })), downbeat };
     };
     r.quantised = (q) => (q ? r.events.map((x) => ({ m: x.m, v: x.v, t: Math.round(x.t / q) * q, d: Math.max(q, Math.round(x.d / q) * q) }))
       : r.events.map((x) => ({ ...x, t: +x.t.toFixed(3), d: +x.d.toFixed(3) })));
@@ -281,5 +310,5 @@
     return M.pretty(detectName(s, flat) || s.map((m) => M.nameOf(m % 12, flat)).join('–'));
   }
 
-  window.MusicUI = { WHITE, esc, noteName, voicingSVG, rollSVG, playRoll, playVoicing, spellerFor, detectName, noteInput, rollRecorder, KEYMAP, segmentChords, liveName };
+  window.MusicUI = { WHITE, esc, noteName, voicingSVG, rollSVG, playRoll, playVoicing, spellerFor, detectName, noteInput, rollRecorder, accentOf, KEYMAP, segmentChords, liveName };
 })();

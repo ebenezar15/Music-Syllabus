@@ -64,6 +64,17 @@ To build the Mac app yourself: `cd desktop && npm install && npm run dist` (on a
 - **MIDI file export:** **⬇ .mid** on any take saves a standard MIDI file you can drag into Logic, GarageBand or any DAW.
 - **App sound switch:** turn the app's own piano sound off if your keyboard already makes sound.
 
+### Recording: count-in, metronome and time signatures
+
+Every recorder (piano-roll blocks, Melody blocks, and the 🎹 MIDI button) shares the same settings, which are remembered:
+- **Start:** *Count-in + metronome*, or *When I start playing* for free time.
+- **Time signature:** 2/4, 3/4, 4/4, 5/4, 6/8 or 12/8. Accents fall on beat 1, plus beat 4 in 6/8 and beat 4 in 5/4. In 6/8 and 12/8 the click and the tempo count eighth notes.
+- **Tempo:** type it, or press **Tap** in time.
+- **Count-in:** 1 or 2 bars. Big numbered dots show the count-in, then the bar you're on.
+- **Metronome while recording:** on or off. A **♩ Metronome** button is also in each recorder and in the sidebar.
+
+With the count-in, the take knows its exact tempo, bars and time signature, so transcription doesn't have to guess. A pickup played during the count-in is kept as a pickup bar.
+
 ### Chord charts and melody transcription
 
 - **Write a chart:** use **＋ New note → Chord chart**, or add a **📄 Chart** block to any note. Type it the way you'd write it on paper:
@@ -83,10 +94,14 @@ To build the Mac app yourself: `cd desktop && npm install && npm run dist` (on a
   - the most common **rhythm pattern**, written as counts: `1 (&) 2 & (3) & 4 (&)`
 
   If the tempo came out double or half, press **½ tempo** or **2× tempo**. If the bar lines are a beat off, use **◀ Bar line ▶**. Change the time signature from the menu.
-- **Melody in letters:** the top line of what you played is written in letters, beat by beat. Notes that share a beat are written together, `–` holds a note and `·` is a rest, so you get `| C CB A G | EF G – C |` with a pickup bar if there is one. Each beat has its count underneath (`1`, `2 &`, `3 e & a`). The octave is shown as C4-style numbers, `C'` / `C,` marks, or hidden. You can also switch to scale-degree **numbers (1 2 3)** or **solfa (Do Re Mi)**.
+- **Melody (its own block):** use **🎼 Melody** to record a tune with the count-in, or type it, e.g. `| G | C CB A G | EF G – C |`. Bars go between `|` and beats are separated by spaces. Notes in one beat share it (`CC` = two eighths, `CDEF` = four sixteenths), `–` holds and `·` rests. Add `C5` for an octave, or leave it off and the nearest one is used. A short first bar is a pickup. After any piano-roll take, **🎼 Transcribe melody** writes its top line as a separate Melody block; **📄 Write chord chart** writes only the chords.
+  - It's shown beat by beat, with counts (`1`, `2 &`, `3 e & a`) and octaves as C4-style numbers or `C'` / `C,` marks. You can also switch to scale-degree **numbers (1 2 3)** or **solfa (Do Re Mi)**.
+  - **Lyrics:** type them with hyphens between syllables (`faith- ful`) and each syllable sits under its note.
+  - **Ear training:** hides the notes, and each one appears when the student plays it right in Play along.
+  - A melody has its own key, time and tempo, and prints, copies and saves as .txt just like a chart.
 - **Practising it:**
   - **▶ Play chart** gives a count-in, a click and a highlight that moves bar by bar, with a loop option.
-  - **▶ Play melody** plays at 50%, 75% or 100% speed and highlights each note.
+  - **▶ Play** (melody) plays at 50%, 75% or 100% speed, with an optional click, and highlights each note.
   - **🎹 Play along** waits on each melody note until you play it on your keyboard, then logs the practice.
 - **Transposing:** the chart's **Key** menu moves the chords and melody to a new key. **View in key** shows them in another key without changing anything, and **1 4 5** shows the chart in Nashville numbers.
 - **Finding charts:** the **📄 Chord charts** shortcut lists every note that has a chart.

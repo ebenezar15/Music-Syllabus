@@ -314,3 +314,25 @@ body.note-open .rb-list { display: none; }
   @page { size: A4; margin: 0; }
 }
 }
+
+/* ===== Recording settings, beat display, melody extras ===== */
+.rec-set { margin-top: 8px; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); border: 1px dashed var(--line); }
+.rec-set select, .rec-set input[type=number] { padding: 4px 8px; }
+.beatbox { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; min-height: 40px; }
+.beatbox .bb-label { font-weight: 700; min-width: 74px; color: var(--muted); }
+.bb-dot { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; border: 2px solid var(--line); background: var(--surface); color: var(--muted); transition: transform .06s; }
+.bb-dot.first { border-color: var(--accent); }
+.bb-dot.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); transform: scale(1.12); }
+.bb-dot.ci.on { background: var(--accent-2); border-color: var(--accent-2); }
+.metro-dots { display: inline-flex; gap: 4px; align-items: center; }
+.metro-dots[hidden] { display: none; }
+.metro-dots span { width: 9px; height: 9px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--line); }
+.metro-dots span.on { background: var(--accent); border-color: var(--accent); }
+.metro-dots span.first.on { background: var(--accent-2); border-color: var(--accent-2); }
+.mel-lyr { font-size: .78rem; color: #333; font-style: italic; white-space: nowrap; margin-top: 2px; }
+.sheet.ear .mn:not(.done) .lbl { visibility: hidden; }
+.sheet.ear .mn:not(.done) { display: inline-block; min-width: 1.1em; border-bottom: 2px solid #bbb; margin-right: 2px; }
+.sheet.ear .mn.on:not(.done) { border-bottom-color: #e0a800; }
+.chart-text.bad { border-color: var(--d); }
+.mel-tools label.grow { flex: 1; min-width: 200px; display: flex; gap: 6px; align-items: center; }
+.mel-tools label.grow input { flex: 1; min-width: 0; }

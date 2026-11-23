@@ -230,7 +230,8 @@
   }
   // Plain-text melody, e.g. "| CC A C E |" — beats separated by spaces, notes in one beat joined, "–" held, "·" rest
   function melodyText(grid, opts = {}) {
-    const beat = (b) => b.tokens.map((t) => (t.hold ? '–' : t.rest ? '·' : (() => { const l = noteLabel(t.m, opts); return l.text + (opts.octaves === 'number' ? l.octText : l.octText); })())).join('');
+    const join = !opts.names || opts.names === 'letters' ? '' : '-';
+    const beat = (b) => b.tokens.map((t) => (t.hold ? '–' : t.rest ? '·' : (() => { const l = noteLabel(t.m, opts); return l.text + l.octText; })())).join(join);
     const perLine = opts.perLine || 4;
     const lines = [];
     for (let i = 0; i < grid.length; i += perLine) lines.push('| ' + grid.slice(i, i + perLine).map((bar) => bar.beats.map(beat).join(' ')).join(' | ') + ' |');
@@ -239,30 +240,41 @@
 
   /* ---------------- whole take → chart + melody ---------------- */
   // roll: {bpm, events, clicked}. opts: {bpm, beatsPerBar, shift, split, section}
-  function transcribe(roll, opts = {}) {
+  // Work out tempo and bar lines for a take. A take recorded with the count-in already knows them.
+  function timing(roll, opts = {}) {
     const recBpm = roll.bpm || 80;
     const events = roll.events || [];
     if (!events.length) return null;
     let bpm, t0, confidence = 1;
+    const counted = roll.clicked && !opts.bpm;
     if (opts.bpm) {
       bpm = opts.bpm;
-      const est = roll.clicked ? { t0: 0 } : estimateTempo(events, recBpm, { split: opts.split });
+      const est = roll.clicked ? { t0: (roll.downbeat || 0) * 60 / recBpm } : estimateTempo(events, recBpm, { split: opts.split });
       t0 = opts.t0 != null ? opts.t0 : est.t0;
     } else if (roll.clicked) {
       bpm = recBpm;
-      const segs0 = U.segmentChords(events, { split: opts.split });
-      t0 = segs0.length ? Math.round(segs0[0].t) * 60 / recBpm : 0;
+      t0 = (roll.downbeat || 0) * 60 / recBpm;
+      // skip whole empty bars before the first note
+      const firstBeat = Math.min(...events.map((e) => e.t)) - (roll.downbeat || 0);
+      const B = roll.beats || 4;
+      if (firstBeat >= B) t0 += Math.floor(firstBeat / B) * B * 60 / recBpm;
     } else {
       const est = estimateTempo(events, recBpm, { split: opts.split });
       bpm = est.bpm; t0 = est.t0; confidence = est.confidence;
     }
-    const P = 60 / bpm;
-    t0 += (opts.shift || 0) * P;
+    t0 += (opts.shift || 0) * 60 / bpm;
     const ev = retime(events, recBpm, bpm, t0);
+    return { bpm, t0, confidence, ev, counted, beatsPerBar: opts.beatsPerBar || (roll.clicked ? roll.beats : null) };
+  }
+
+  // Chord chart from a take (chords, bars, key, rhythm)
+  function transcribeChords(roll, opts = {}) {
+    const tm = timing(roll, opts); if (!tm) return null;
+    const { bpm, t0, confidence, ev } = tm;
     const inTime = ev.filter((e) => e.t > -0.3);
     const line = melodyLine(ev, { split: opts.split });
     const segs = U.segmentChords(inTime, { split: opts.split || 60 }).filter((s) => s.name);
-    const beatsPerBar = opts.beatsPerBar || detectMeter(segs);
+    const beatsPerBar = tm.beatsPerBar || detectMeter(segs);
     const key = detectKey(ev, segs);
     const flat = key.pc === 0 ? true : (M.KEYS.find((k) => k.pc === key.pc) || {}).flat;
     // Name each chord from the accompaniment: leave out a melody note sounding on top only when
@@ -278,12 +290,77 @@
     const end = Math.max(...ev.map((e) => e.t + e.d));
     const bars = barsFromSegments(segs, beatsPerBar, Math.ceil(end - 0.25));
     const rhythm = rhythmPattern(ev, beatsPerBar, { split: opts.split });
-    const mel = quantiseMelody(line, {});
     return {
-      bpm, beatsPerBar, key: key.key, keyLabel: key.label, t0, confidence,
-      text: chartText(bars, { section: opts.section || 'Verse' }),
-      bars, rhythm, melody: mel.notes.length >= 3 ? { notes: mel.notes, q: mel.q } : null
+      bpm, beatsPerBar, key: key.key, keyLabel: key.label, t0, confidence, counted: tm.counted, chords: segs.length,
+      text: chartText(bars, { section: opts.section || 'Verse' }), bars, rhythm
     };
+  }
+
+  // Melody (top line, or the whole take when it is a single line) from a take
+  function transcribeMelody(roll, opts = {}) {
+    const tm = timing(roll, opts); if (!tm) return null;
+    const { bpm, t0, confidence, ev } = tm;
+    const line = melodyLine(ev, { split: opts.split });
+    const mel = quantiseMelody(line, { q: opts.q });
+    const segs = U.segmentChords(ev.filter((e) => e.t > -0.3), { split: opts.split || 60 });
+    const beatsPerBar = tm.beatsPerBar || (segs.length >= 3 ? detectMeter(segs) : 4);
+    const key = detectKey(ev, segs);
+    return { bpm, beatsPerBar, key: key.key, keyLabel: key.label, t0, confidence, counted: tm.counted, notes: mel.notes, q: mel.q };
+  }
+
+  // Both at once (kept for older callers)
+  function transcribe(roll, opts = {}) {
+    const c = transcribeChords(roll, opts); if (!c) return null;
+    const m = transcribeMelody(roll, { ...opts, beatsPerBar: c.beatsPerBar });
+    return { ...c, melody: m && m.notes.length >= 3 ? { notes: m.notes, q: m.q } : null };
+  }
+
+  /* ---------------- typed melodies: "| CC A C E |" ---------------- */
+  const LET = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  // Read letter notation back into notes. Beats are separated by spaces, bars by |. Within a beat the notes share it equally.
+  // A note may carry an octave number (C4) or marks (C' C,). Without one, the octave nearest the previous note is used.
+  // "–" or "-" holds the previous note for a beat, "·" "_" or "." is a rest. A first bar shorter than the rest is a pickup.
+  function parseMelodyText(text, beatsPerBar = 4) {
+    const bad = [];
+    const barsTxt = (text || '').replace(/\n/g, ' ').split('|').map((x) => x.trim()).filter(Boolean);
+    const bars = barsTxt.map((bt) => bt.split(/\s+/).filter(Boolean));
+    if (!bars.length) return { notes: [], q: 0.5, bad };
+    const pickup = bars.length > 1 && bars[0].length < beatsPerBar ? bars[0].length : 0;
+    const notes = [];
+    let prev = 65, t = -pickup, q = 0.5; // start near F4 so plain letters land around middle C to G above
+    bars.forEach((beats) => {
+      beats.forEach((tok) => {
+        const parts = [];
+        const re = /([A-Ga-g])(#|b|♯|♭)?(-?\d|'+|,+)?|[–—-]|[·_.]/g;
+        let m, used = 0;
+        while ((m = re.exec(tok))) {
+          used += m[0].length;
+          if (m[1]) {
+            const pc = (LET[m[1].toUpperCase()] + (m[2] === '#' || m[2] === '♯' ? 1 : m[2] === 'b' || m[2] === '♭' ? -1 : 0) + 12) % 12;
+            let midi;
+            if (m[3] && /\d/.test(m[3])) midi = 12 * (parseInt(m[3], 10) + 1) + pc;
+            else if (m[3]) midi = 60 + pc + 12 * (m[3][0] === "'" ? m[3].length : -m[3].length);
+            else { midi = Math.floor(prev / 12) * 12 + pc; if (midi - prev > 6) midi -= 12; else if (prev - midi > 6) midi += 12; }
+            parts.push({ m: midi }); prev = midi;
+          } else if (/[–—-]/.test(m[0])) parts.push({ hold: true });
+          else parts.push({ rest: true });
+        }
+        if (used < tok.length) bad.push(tok);
+        const each = 1 / Math.max(1, parts.length);
+        if (each < 0.5) q = 0.25;
+        parts.forEach((p, k) => {
+          const at = t + k * each;
+          if (p.m != null) notes.push({ m: p.m, t: +at.toFixed(3), d: +each.toFixed(3) });
+          else if (p.hold && notes.length) notes[notes.length - 1].d = +(at + each - notes[notes.length - 1].t).toFixed(3);
+        });
+        t += 1;
+      });
+    });
+    return { notes, q, bad, pickup };
+  }
+  // Syllables for lyrics under the notes: split on spaces and hyphens ("A-maz-ing grace")
+  function syllables(text) {
+    return (text || '').trim().split(/\s+/).filter(Boolean).flatMap((w) => w.split(/(?<=-)/));
   }
 
   /* ---------------- reading and writing chart text ---------------- */
@@ -312,11 +389,11 @@
         if (toks.length === 1 && toks[0] === '%' && bars.length) { bars.push({ slots: bars[bars.length - 1].slots.slice(), repeat: true }); return; }
         if (!toks.length) toks = ['.'];
         const slots = [];
-        const each = toks.length === 1 ? beatsPerBar : beatsPerBar / toks.length;
-        toks.forEach((t) => {
+        const k = toks.length;
+        toks.forEach((t, j) => {
           if (!isHold(t) && t !== 'N.C.' && !M.parseChord(t)) bad.add(t);
-          const n = Math.max(1, Math.round(each));
-          for (let i = 0; i < n; i++) slots.push(i === 0 ? t : '.');
+          const n = k >= beatsPerBar ? 1 : Math.ceil(((j + 1) * beatsPerBar) / k) - Math.ceil((j * beatsPerBar) / k);
+          for (let i = 0; i < Math.max(1, n); i++) slots.push(i === 0 ? t : '.');
         });
         bars.push({ slots: slots.slice(0, Math.max(beatsPerBar, slots.length)), raw: cell });
       });
@@ -352,6 +429,6 @@
 
   window.Transcribe = {
     estimateTempo, retime, detectMeter, detectKey, barsFromSegments, barText, chartText, rhythmPattern, countLabels,
-    melodyLine, quantiseMelody, melodyGrid, noteLabel, melodyText, transcribe, parseChart, chartTimeline, mapChartChords, isHold
+    melodyLine, quantiseMelody, melodyGrid, noteLabel, melodyText, transcribe, transcribeChords, transcribeMelody, timing, parseMelodyText, syllables, parseChart, chartTimeline, mapChartChords, isHold
   };
 })();

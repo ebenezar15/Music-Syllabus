@@ -251,8 +251,10 @@
   function click(when, accent) {
     const c = audio(); if (!c) return;
     const o = c.createOscillator(), g = c.createGain();
-    o.frequency.value = accent ? 1600 : 1000;
-    g.gain.setValueAtTime(accent ? 0.5 : 0.28, when);
+    // accent: true/2 = bar downbeat, 1 = secondary accent (e.g. beat 4 of 6/8), false/0 = other beats
+    const strong = accent === true || accent === 2, mid = accent === 1;
+    o.frequency.value = strong ? 1600 : mid ? 1300 : 1000;
+    g.gain.setValueAtTime(strong ? 0.5 : mid ? 0.38 : 0.28, when);
     g.gain.exponentialRampToValueAtTime(0.0001, when + 0.06);
     o.connect(g); g.connect(master); o.start(when); o.stop(when + 0.07);
     playing.push(o);
