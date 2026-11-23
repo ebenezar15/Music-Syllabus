@@ -73,6 +73,27 @@
     return { key: key.name, pc: majPc, minor: best.minor, label: best.minor ? M.nameOf(best.pc, key.flat) + 'm' : key.name };
   }
 
+  /* ---------------- naming chords under a melody ---------------- */
+  // Leave out melody notes sounding on top when the rest still makes a full chord. When the accompaniment is just
+  // root + 5th (no 3rd anywhere), use the chord the key would have on that root: A–E in C major is Am, not A.
+  function nameUnderMelody(seg, line, key, flat) {
+    const mel = new Set(line.filter((x) => x.t <= seg.t + 0.35 && x.t + x.d > seg.t + 0.05).map((x) => x.m));
+    const acc = seg.notes.filter((m) => !mel.has(m));
+    const accPcs = Array.from(new Set(acc.map((m) => m % 12)));
+    if (accPcs.length >= 3) { const n = U.detectName(acc, flat); if (n) return n.replace(/^([A-G][#b]?)5(\/|$)/, '$1$2'); }
+    const bass = (acc.length ? Math.min(...acc) : Math.min(...seg.notes)) % 12;
+    const isFifth = accPcs.length === 2 && accPcs.includes((bass + 7) % 12);
+    const allPcs = new Set(seg.notes.map((m) => m % 12));
+    const hasThird = allPcs.has((bass + 3) % 12) || allPcs.has((bass + 4) % 12);
+    if ((isFifth || accPcs.length === 1) && !hasThird && key) {
+      const deg = M.mod(bass - key.pc);
+      const q = { 0: '', 2: 'm', 4: 'm', 5: '', 7: '', 9: 'm', 11: 'dim' }[deg];
+      return M.nameOf(bass, flat) + (q == null ? '' : q);
+    }
+    const n = U.detectName(seg.notes, flat) || seg.name || '';
+    return n.replace(/^([A-G][#b]?)5(\/|$)/, '$1$2');
+  }
+
   /* ---------------- chord chart ---------------- */
 
   // segs: chord segments in beats (downbeat at 0). Returns bars: [[chord per beat]]
@@ -159,6 +180,25 @@
     return line;
   }
 
+  // Left hand: everything below the split that is not part of the melody, grouped into notes/chords and quantised
+  function lhLine(events, melody, opts = {}) {
+    const split = opts.split || 60, q = opts.q || 0.5;
+    const mel = new Set(melody.map((x) => x.src).filter(Boolean));
+    const lh = events.filter((e) => e.m < split && !mel.has(e)).sort((a, b) => a.t - b.t);
+    const groups = [];
+    lh.forEach((e) => { const g = groups[groups.length - 1]; if (g && e.t - g.t < 0.12) g.list.push(e); else groups.push({ t: e.t, list: [e] }); });
+    const out = [];
+    groups.forEach((g, k) => {
+      const t = Math.round(g.t / q) * q;
+      const next = groups[k + 1] ? Math.round(groups[k + 1].t / q) * q : Infinity;
+      const end = Math.max(...g.list.map((e) => Math.round((e.t + e.d) / q) * q));
+      const d = Math.max(q, Math.min(end, next) - t);
+      if (out.length && Math.abs(out[out.length - 1].t - t) < 1e-6) return; // two groups landed on the same grid step
+      Array.from(new Set(g.list.map((e) => e.m))).forEach((m) => out.push({ m, t, d }));
+    });
+    return out;
+  }
+
   function quantiseMelody(line, opts = {}) {
     if (!line.length) return { notes: [], q: 0.5 };
     const iois = line.slice(1).map((n, i) => n.t - line[i].t).filter((x) => x > 0.05);
@@ -178,38 +218,57 @@
 
   // Lay notes out bar by bar and beat by beat.
   // Returns [{bar, beats:[{tokens:[{m}|{rest}|{hold}], count:'1 &'}]}]; bar index may be -1 for a pickup.
-  function melodyGrid(notes, beatsPerBar, q) {
-    if (!notes.length) return [];
+  const tailFor = (sub) => (sub === 4 ? ['e', '&', 'a'] : sub === 3 ? ['&', 'a'] : ['&']);
+  // One beat of one hand: tokens are notes (several notes starting together form one token), holds and rests
+  function beatCell(notes, b0, beatNo, sub) {
+    const starts = notes.filter((n) => n.t >= b0 - 1e-6 && n.t < b0 + 1 - 1e-6).sort((a, b) => a.t - b.t);
+    const soundingAt = (t) => notes.some((n) => n.t < t - 1e-6 && n.t + n.d > t + 1e-6);
+    const tokens = [], count = [], tail = tailFor(sub);
+    if (!starts.length) {
+      tokens.push(soundingAt(b0 + 0.001) ? { hold: true } : { rest: true });
+      count.push(String(beatNo));
+      return { tokens, count: count.join(' '), empty: true };
+    }
+    if (starts[0].t > b0 + 1e-6) { tokens.push(soundingAt(b0 + 0.001) ? { hold: true } : { rest: true }); count.push(String(beatNo)); }
+    const groups = [];
+    starts.forEach((n) => { const g = groups[groups.length - 1]; if (g && Math.abs(g.t - n.t) < 1e-6) g.list.push(n); else groups.push({ t: n.t, list: [n] }); });
+    groups.forEach((g) => {
+      const list = g.list.slice().sort((a, b) => b.m - a.m);
+      tokens.push({ m: list[0].m, ms: list.map((n) => n.m), d: list[0].d, i: notes.indexOf(list[0]), is: list.map((n) => notes.indexOf(n)) });
+      const pos = Math.round((g.t - b0) * sub);
+      count.push(pos === 0 ? String(beatNo) : tail[Math.max(0, Math.min(tail.length - 1, pos - 1))]);
+    });
+    return { tokens, count: count.join(' ') };
+  }
+  // Bars of one hand. opts.from / opts.to fix the bar range (so both hands line up); opts.pickupFrom trims a pickup bar
+  function melodyGrid(notes, beatsPerBar, q, opts = {}) {
+    if (!notes.length && opts.from == null) return [];
     const sub = Math.round(1 / q);
-    const first = Math.floor(Math.min(...notes.map((n) => n.t)) / beatsPerBar);
-    const last = Math.floor((Math.max(...notes.map((n) => n.t + n.d)) - 0.001) / beatsPerBar);
+    const first = opts.from != null ? opts.from : Math.floor(Math.min(...notes.map((n) => n.t)) / beatsPerBar);
+    const last = opts.to != null ? opts.to : Math.floor((Math.max(...notes.map((n) => n.t + n.d)) - 0.001) / beatsPerBar);
     const bars = [];
-    const tail = sub === 4 ? ['e', '&', 'a'] : ['&'];
     for (let bar = first; bar <= last; bar++) {
       const beats = [];
-      for (let j = 0; j < beatsPerBar; j++) {
-        const b0 = bar * beatsPerBar + j;
-        const starts = notes.filter((n) => n.t >= b0 - 1e-6 && n.t < b0 + 1 - 1e-6);
-        const soundingAt = (t) => notes.some((n) => n.t < t - 1e-6 && n.t + n.d > t + 1e-6);
-        const tokens = [], count = [];
-        if (!starts.length) {
-          tokens.push(soundingAt(b0 + 0.001) || notes.some((n) => Math.abs(n.t - b0) < 1e-6) ? { hold: true } : { rest: true });
-          count.push(String(j + 1));
-        } else {
-          if (starts[0].t > b0 + 1e-6) { tokens.push(soundingAt(b0 + 0.001) ? { hold: true } : { rest: true }); count.push(String(j + 1)); }
-          starts.forEach((n) => {
-            tokens.push({ m: n.m, d: n.d, i: notes.indexOf(n) });
-            const pos = Math.round((n.t - b0) * sub);
-            count.push(pos === 0 ? String(j + 1) : tail[Math.min(tail.length - 1, sub === 4 ? pos - 1 : 0)]);
-          });
-        }
-        beats.push({ tokens, count: count.join(' ') });
-      }
+      for (let j = 0; j < beatsPerBar; j++) beats.push(beatCell(notes, bar * beatsPerBar + j, j + 1, sub));
       bars.push({ bar, beats });
     }
     // A leading pickup bar: drop the empty beats before the first note
-    if (bars.length && bars[0].bar < 0) bars[0].beats = bars[0].beats.slice(bars[0].beats.findIndex((b) => b.tokens.some((t) => t.m != null)));
+    if (bars.length && bars[0].bar < 0) {
+      const from = opts.pickupFrom != null ? opts.pickupFrom : bars[0].beats.findIndex((b) => b.tokens.some((t) => t.m != null));
+      bars[0].beats = bars[0].beats.slice(Math.max(0, from));
+      bars[0].offset = Math.max(0, from);
+    }
     return bars;
+  }
+  // Bar range covering both hands, and where a shared pickup bar starts
+  function handsRange(rh, lh, beatsPerBar) {
+    const all = rh.concat(lh || []);
+    if (!all.length) return null;
+    const from = Math.floor(Math.min(...all.map((n) => n.t)) / beatsPerBar);
+    const to = Math.floor((Math.max(...all.map((n) => n.t + n.d)) - 0.001) / beatsPerBar);
+    const firstT = Math.min(...all.map((n) => n.t));
+    const pickupFrom = from < 0 ? Math.floor(firstT - from * beatsPerBar + 1e-6) : 0;
+    return { from, to, pickupFrom };
   }
 
   // Name one melody note for students: letter + accidental, octave as number / marks / none, or a scale degree / solfa
@@ -231,11 +290,24 @@
   // Plain-text melody, e.g. "| CC A C E |" — beats separated by spaces, notes in one beat joined, "–" held, "·" rest
   function melodyText(grid, opts = {}) {
     const join = !opts.names || opts.names === 'letters' ? '' : '-';
-    const beat = (b) => b.tokens.map((t) => (t.hold ? '–' : t.rest ? '·' : (() => { const l = noteLabel(t.m, opts); return l.text + l.octText; })())).join(join);
+    const one = (m) => { const l = noteLabel(m, opts); return l.text + l.octText; };
+    const beat = (b) => b.tokens.map((t) => (t.hold ? '–' : t.rest ? '·' : t.ms && t.ms.length > 1 ? '[' + t.ms.slice().reverse().map(one).join(join) + ']' : one(t.m))).join(join);
     const perLine = opts.perLine || 4;
     const lines = [];
-    for (let i = 0; i < grid.length; i += perLine) lines.push('| ' + grid.slice(i, i + perLine).map((bar) => bar.beats.map(beat).join(' ')).join(' | ') + ' |');
+    for (let i = 0; i < grid.length; i += perLine) lines.push((opts.prefix || '') + '| ' + grid.slice(i, i + perLine).map((bar) => bar.beats.map(beat).join(' ')).join(' | ') + ' |');
     return lines.join('\n');
+  }
+  // Both hands, line by line: "RH: | … |" then "LH: | … |" for each group of bars
+  function handsText(rh, lh, beatsPerBar, q, opts = {}) {
+    if (!lh || !lh.length) return melodyText(melodyGrid(rh, beatsPerBar, q), opts);
+    const r = handsRange(rh, lh, beatsPerBar);
+    const g1 = melodyGrid(rh, beatsPerBar, q, r), g2 = melodyGrid(lh, beatsPerBar, q, r);
+    const per = opts.perLine || 4, out = [];
+    for (let i = 0; i < g1.length; i += per) {
+      out.push(melodyText(g1.slice(i, i + per), { ...opts, prefix: 'RH: ', perLine: per }));
+      out.push(melodyText(g2.slice(i, i + per), { ...opts, prefix: 'LH: ', perLine: per }));
+    }
+    return out.join('\n');
   }
 
   /* ---------------- whole take → chart + melody ---------------- */
@@ -279,14 +351,7 @@
     const flat = key.pc === 0 ? true : (M.KEYS.find((k) => k.pc === key.pc) || {}).flat;
     // Name each chord from the accompaniment: leave out a melody note sounding on top only when
     // the other notes still make a full chord (otherwise the top note is part of the voicing)
-    segs.forEach((s) => {
-      const mel = new Set(line.filter((x) => x.t <= s.t + 0.35 && x.t + x.d > s.t + 0.05).map((x) => x.m));
-      const acc = s.notes.filter((m) => !mel.has(m));
-      const accPcs = new Set(acc.map((m) => m % 12)).size;
-      let name = (accPcs >= 3 && U.detectName(acc, flat)) || U.detectName(s.notes, flat) || s.name;
-      name = name.replace(/^([A-G][#b]?)5(\/|$)/, '$1$2'); // a bare 5th is written as the plain chord
-      s.name = name;
-    });
+    segs.forEach((s) => { s.name = nameUnderMelody(s, line, key, flat); });
     const end = Math.max(...ev.map((e) => e.t + e.d));
     const bars = barsFromSegments(segs, beatsPerBar, Math.ceil(end - 0.25));
     const rhythm = rhythmPattern(ev, beatsPerBar, { split: opts.split });
@@ -300,12 +365,19 @@
   function transcribeMelody(roll, opts = {}) {
     const tm = timing(roll, opts); if (!tm) return null;
     const { bpm, t0, confidence, ev } = tm;
-    const line = melodyLine(ev, { split: opts.split });
+    const split = opts.split || 60;
+    const line = melodyLine(ev, { split });
     const mel = quantiseMelody(line, { q: opts.q });
-    const segs = U.segmentChords(ev.filter((e) => e.t > -0.3), { split: opts.split || 60 });
+    const segs = U.segmentChords(ev.filter((e) => e.t > -0.3), { split });
     const beatsPerBar = tm.beatsPerBar || (segs.length >= 3 ? detectMeter(segs) : 4);
     const key = detectKey(ev, segs);
-    return { bpm, beatsPerBar, key: key.key, keyLabel: key.label, t0, confidence, counted: tm.counted, notes: mel.notes, q: mel.q };
+    const lh = lhLine(ev, line, { split, q: mel.q });
+    // chord names to show above the melody, one per beat
+    const flat = key.pc === 0 ? true : (M.KEYS.find((k) => k.pc === key.pc) || {}).flat;
+    const named = segs.filter((s) => s.name).map((s) => ({ ...s, name: nameUnderMelody(s, line, key, flat) }));
+    const end = Math.max(...ev.map((e) => e.t + e.d));
+    const chordBars = named.length ? barsFromSegments(named, beatsPerBar, Math.ceil(end - 0.25)) : null;
+    return { bpm, beatsPerBar, key: key.key, keyLabel: key.label, t0, confidence, counted: tm.counted, notes: mel.notes, lh, chordBars, q: mel.q, split };
   }
 
   // Both at once (kept for older callers)
@@ -320,28 +392,31 @@
   // Read letter notation back into notes. Beats are separated by spaces, bars by |. Within a beat the notes share it equally.
   // A note may carry an octave number (C4) or marks (C' C,). Without one, the octave nearest the previous note is used.
   // "–" or "-" holds the previous note for a beat, "·" "_" or "." is a rest. A first bar shorter than the rest is a pickup.
-  function parseMelodyText(text, beatsPerBar = 4) {
+  function parseMelodyText(text, beatsPerBar = 4, opts = {}) {
     const bad = [];
     const barsTxt = (text || '').replace(/\n/g, ' ').split('|').map((x) => x.trim()).filter(Boolean);
     const bars = barsTxt.map((bt) => bt.split(/\s+/).filter(Boolean));
     if (!bars.length) return { notes: [], q: 0.5, bad };
     const pickup = bars.length > 1 && bars[0].length < beatsPerBar ? bars[0].length : 0;
     const notes = [];
-    let prev = 65, t = -pickup, q = 0.5; // start near F4 so plain letters land around middle C to G above
+    let prev = opts.start || 65, t = -pickup, q = 0.5; // start near F4 so plain letters land around middle C to G above
     bars.forEach((beats) => {
       beats.forEach((tok) => {
         const parts = [];
-        const re = /([A-Ga-g])(#|b|♯|♭)?(-?\d|'+|,+)?|[–—-]|[·_.]/g;
-        let m, used = 0;
+        const re = /\[|\]|([A-Ga-g])(#|b|♯|♭)?(-?\d|'+|,+)?|[–—-]|[·_.]/g;
+        let m, used = 0, chord = null;
         while ((m = re.exec(tok))) {
           used += m[0].length;
+          if (m[0] === '[') { chord = { ms: [] }; continue; }
+          if (m[0] === ']') { if (chord && chord.ms.length) parts.push(chord); chord = null; continue; }
           if (m[1]) {
             const pc = (LET[m[1].toUpperCase()] + (m[2] === '#' || m[2] === '♯' ? 1 : m[2] === 'b' || m[2] === '♭' ? -1 : 0) + 12) % 12;
             let midi;
             if (m[3] && /\d/.test(m[3])) midi = 12 * (parseInt(m[3], 10) + 1) + pc;
             else if (m[3]) midi = 60 + pc + 12 * (m[3][0] === "'" ? m[3].length : -m[3].length);
             else { midi = Math.floor(prev / 12) * 12 + pc; if (midi - prev > 6) midi -= 12; else if (prev - midi > 6) midi += 12; }
-            parts.push({ m: midi }); prev = midi;
+            if (chord) chord.ms.push(midi); else parts.push({ m: midi });
+            prev = midi;
           } else if (/[–—-]/.test(m[0])) parts.push({ hold: true });
           else parts.push({ rest: true });
         }
@@ -351,12 +426,28 @@
         parts.forEach((p, k) => {
           const at = t + k * each;
           if (p.m != null) notes.push({ m: p.m, t: +at.toFixed(3), d: +each.toFixed(3) });
-          else if (p.hold && notes.length) notes[notes.length - 1].d = +(at + each - notes[notes.length - 1].t).toFixed(3);
+          else if (p.ms) p.ms.forEach((mm) => notes.push({ m: mm, t: +at.toFixed(3), d: +each.toFixed(3) }));
+          else if (p.hold && notes.length) {
+            const lastT = notes[notes.length - 1].t; // a hold extends every note of the last chord
+            notes.filter((x) => Math.abs(x.t - lastT) < 1e-6).forEach((x) => { x.d = +(at + each - x.t).toFixed(3); });
+          }
         });
         t += 1;
       });
     });
     return { notes, q, bad, pickup };
+  }
+  // "RH: | … |" and "LH: | … |" lines (lines without a prefix are right hand)
+  function parseHandsText(text, beatsPerBar = 4) {
+    const rhL = [], lhL = [];
+    (text || '').split('\n').forEach((line) => {
+      const m = /^\s*(RH|LH|R|L)\s*:\s*(.*)$/i.exec(line);
+      if (m) (m[1][0].toUpperCase() === 'L' ? lhL : rhL).push(m[2]); else if (line.trim()) rhL.push(line);
+    });
+    const r = parseMelodyText(rhL.join(' '), beatsPerBar);
+    const l = parseMelodyText(lhL.join(' '), beatsPerBar, { start: 48 });
+    // a left hand that starts later than a right-hand pickup still begins at bar 1
+    return { notes: r.notes, lh: l.notes, q: Math.min(r.q, l.notes.length ? l.q : 1), bad: r.bad.concat(l.bad), pickup: r.pickup };
   }
   // Syllables for lyrics under the notes: split on spaces and hyphens ("A-maz-ing grace")
   function syllables(text) {
@@ -429,6 +520,6 @@
 
   window.Transcribe = {
     estimateTempo, retime, detectMeter, detectKey, barsFromSegments, barText, chartText, rhythmPattern, countLabels,
-    melodyLine, quantiseMelody, melodyGrid, noteLabel, melodyText, transcribe, transcribeChords, transcribeMelody, timing, parseMelodyText, syllables, parseChart, chartTimeline, mapChartChords, isHold
+    melodyLine, lhLine, quantiseMelody, melodyGrid, beatCell, handsRange, handsText, parseHandsText, noteLabel, melodyText, transcribe, transcribeChords, transcribeMelody, timing, parseMelodyText, syllables, parseChart, chartTimeline, mapChartChords, isHold
   };
 })();

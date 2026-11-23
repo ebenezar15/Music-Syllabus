@@ -19,7 +19,7 @@
     for (let m = lo; m <= hi; m++) { if (WHITE.includes(m % 12)) { pos[m] = x + ww / 2; x += ww; } else pos[m] = x; }
     for (let m = lo; m <= hi; m++) {
       const isL = lh.includes(m), isR = rh.includes(m), white = WHITE.includes(m % 12);
-      const fill = isL ? 'var(--s)' : isR ? 'var(--accent)' : white ? 'var(--key-white)' : 'var(--key-black)';
+      const fill = isL ? 'var(--lh, var(--s))' : isR ? 'var(--rh, var(--accent))' : white ? 'var(--key-white)' : 'var(--key-black)';
       if (white) {
         whites += `<rect data-m="${m}" x="${pos[m] - ww / 2}" y="0" width="${ww}" height="${wh}" rx="2" fill="${fill}" stroke="var(--line)"/>`;
         if (m % 12 === 0 && opts.labels !== false && !fingers[m]) whites += `<text x="${pos[m]}" y="${wh - 4}" text-anchor="middle" font-size="${ww * 0.5}" fill="${isL || isR ? 'var(--accent-ink)' : '#888'}" pointer-events="none">C${Math.floor(m / 12) - 1}</text>`;
@@ -28,11 +28,11 @@
       }
       if (fingers[m] && (isL || isR)) {
         const fy = white ? wh - ww * 0.55 : wh * 0.6 - ww * 0.45;
-        marks += `<circle cx="${pos[m]}" cy="${fy}" r="${ww * 0.36}" fill="var(--surface)" pointer-events="none"/><text x="${pos[m]}" y="${fy + ww * 0.16}" text-anchor="middle" font-size="${ww * 0.46}" font-weight="700" fill="${isL ? 'var(--s)' : 'var(--accent)'}" pointer-events="none">${esc(fingers[m])}</text>`;
+        marks += `<circle cx="${pos[m]}" cy="${fy}" r="${ww * 0.36}" fill="var(--surface)" pointer-events="none"/><text x="${pos[m]}" y="${fy + ww * 0.16}" text-anchor="middle" font-size="${ww * 0.46}" font-weight="700" fill="${isL ? 'var(--lh, var(--s))' : 'var(--rh, var(--accent))'}" pointer-events="none">${esc(fingers[m])}</text>`;
       }
       if (opts.names && (isL || isR)) {
         const label = opts.speller ? opts.speller(m % 12) : M.nameOf(m % 12, opts.flat);
-        marks += `<text x="${pos[m]}" y="${wh + 13}" text-anchor="middle" font-size="10" font-weight="700" fill="${isL ? 'var(--s)' : 'var(--accent)'}" pointer-events="none">${M.pretty(label)}</text>`;
+        marks += `<text x="${pos[m]}" y="${wh + 13}" text-anchor="middle" font-size="10" font-weight="700" fill="${isL ? 'var(--lh, var(--s))' : 'var(--rh, var(--accent))'}" pointer-events="none">${M.pretty(label)}</text>`;
       }
     }
     const label = all.map((m) => noteName(m, opts.flat)).join(' ');
@@ -56,7 +56,7 @@
     }
     for (let b = 0; b <= len; b++) g += `<line x1="${gutter + b * ppb}" x2="${gutter + b * ppb}" y1="0" y2="${H}" stroke="var(--line)" stroke-width="${b % 4 === 0 ? 1.4 : 0.5}"/>`;
     ev.forEach((e) => {
-      g += `<rect x="${gutter + e.t * ppb + 0.5}" y="${(hi - e.m) * row + 1}" width="${Math.max(3, e.d * ppb - 1)}" height="${row - 2}" rx="2" fill="${e.m < split ? 'var(--s)' : 'var(--accent)'}" opacity="${0.55 + (e.v || 90) / 300}"><title>${noteName(e.m)} · beat ${(e.t + 1).toFixed(2)}</title></rect>`;
+      g += `<rect x="${gutter + e.t * ppb + 0.5}" y="${(hi - e.m) * row + 1}" width="${Math.max(3, e.d * ppb - 1)}" height="${row - 2}" rx="2" fill="${(e.h ? e.h === 'L' : e.m < split) ? 'var(--lh, var(--s))' : 'var(--rh, var(--accent))'}" opacity="${0.55 + (e.v || 90) / 300}"><title>${noteName(e.m)} · beat ${(e.t + 1).toFixed(2)}</title></rect>`;
     });
     (opts.segments || []).forEach((sg) => {
       const x = gutter + sg.t * ppb;
@@ -257,6 +257,7 @@
       r.sustain = false; r.armed = false;
       Array.from(r.active.keys()).forEach(end);
       r.on = false;
+      M.stopAll(); // also silence count-in and metronome clicks that were already scheduled
     };
     // Shift a take so no time is negative; returns {events, downbeat} where downbeat is the beat where bar 1 starts
     r.take = (q) => {

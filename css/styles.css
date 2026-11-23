@@ -246,8 +246,8 @@ input[type=checkbox] { accent-color: var(--accent); width: 18px; height: 18px; }
 .lib-big-kb { margin-top: 12px; overflow-x: auto; }
 .lib-big-kb .mini-kb { max-height: 170px; min-width: 420px; }
 .hand-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
-.hand-dot.lh { background: var(--s); } .hand-dot.rh { background: var(--accent); }
-.piano .w.lhk.on, .piano .b.lhk.on { background: var(--s) !important; }
+.hand-dot.lh { background: var(--lh, var(--s)); } .hand-dot.rh { background: var(--rh, var(--accent)); }
+.piano .w.lhk.on, .piano .b.lhk.on { background: var(--lh, var(--s)) !important; }
 .piano .hit { filter: brightness(.8); box-shadow: inset 0 -10px 0 var(--accent-2) !important; }
 .roll-item { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--surface-2); }
 .roll-item + .roll-item { margin-top: 10px; }

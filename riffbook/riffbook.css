@@ -336,3 +336,52 @@ body.note-open .rb-list { display: none; }
 .chart-text.bad { border-color: var(--d); }
 .mel-tools label.grow { flex: 1; min-width: 200px; display: flex; gap: 6px; align-items: center; }
 .mel-tools label.grow input { flex: 1; min-width: 0; }
+
+/* ===== Two-hand melody sheet ===== */
+.mel-grid { display: grid; align-items: start; margin: 0 0 18px; font-size: 1.08rem; overflow-x: auto; }
+.mel-grid .mc { padding: 0 .55em 0 .4em; min-height: 1.2em; white-space: nowrap; }
+.mel-grid .mc.bl { border-left: 1.5px solid #222; }
+.mel-grid .mc.bl.pu { border-left-style: dashed; }
+.mel-grid .mc.end { border-left: 1.5px solid #222; padding: 0; }
+.mel-grid .mc.ch { font-size: .85rem; font-weight: 700; color: #111; padding-bottom: 2px; border-left-color: transparent; }
+.mel-grid .mc.ch.end { border-left-color: transparent; }
+.mel-grid .mc.rh { padding-top: 2px; }
+.mel-grid .mc.lh { padding: 4px .55em 4px .4em; border-top: 1px dotted #ddd; }
+.mel-grid .mc.ct { font-size: .68rem; color: #777; }
+.mel-grid .mc.ly { font-size: .78rem; color: #333; font-style: italic; }
+.mel-grid .mc.lgc { border: 0; padding: 0 .3em 0 0; }
+.mel-grid .lg { font-size: .62rem; font-weight: 800; letter-spacing: .04em; padding: 1px 4px; border-radius: 4px; color: #fff; background: #777; }
+.hands-colored .mel-grid .lg.R { background: var(--rh, var(--accent)); }
+.hands-colored .mel-grid .lg.L { background: var(--lh, var(--s)); }
+.hands-colored .mn.R { color: var(--rh, var(--accent)); }
+.hands-colored .mn.L { color: var(--lh, var(--s)); }
+.mn .stack { display: inline-flex; flex-direction: column; line-height: 1.05; vertical-align: top; }
+.mn .stack > span { font-size: .92em; }
+.mn.done { text-decoration: underline; text-decoration-thickness: 2px; }
+.sheet .mn sub { color: inherit; opacity: .6; }
+.sheet { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.rec-btn { background: #d62f2f; color: #fff; border-color: transparent; }
+.rec-btn:hover { background: #b82525; }
+.hand-colors { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 8px; }
+.hand-colors > span { width: 100%; color: var(--muted); }
+.hand-colors select { flex: 1; min-width: 0; padding: 4px 6px; }
+.hand-colors label { display: inline-flex; align-items: center; gap: 4px; }
+.hand-colors input[type=color] { width: 26px; height: 22px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; }
+
+/* ===== Piano-roll editor ===== */
+.roll-ed-ov { background: var(--bg); display: block; padding: 0; overflow: hidden; }
+.re { display: flex; flex-direction: column; height: 100vh; width: 100%; min-width: 0; padding: 14px 18px; gap: 8px; }
+.re > * { min-width: 0; }
+.re-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.re-tools { gap: 6px 10px; }
+.re-tools select { padding: 4px 6px; }
+.re-sep { width: 1px; height: 22px; background: var(--line); }
+.re-canvas { flex: 1; overflow: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); outline: none; touch-action: none; }
+.re-canvas:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.re-canvas[data-tool=draw] { cursor: crosshair; }
+.re-canvas[data-tool=erase] { cursor: not-allowed; }
+.re-svg { display: block; }
+.re-note { cursor: grab; }
+.re-edge { cursor: ew-resize; }
+.re-key { cursor: pointer; }
+.re-help { padding-bottom: 4px; }

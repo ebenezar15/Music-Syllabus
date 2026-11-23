@@ -75,6 +75,24 @@ Every recorder (piano-roll blocks, Melody blocks, and the 🎹 MIDI button) shar
 
 With the count-in, the take knows its exact tempo, bars and time signature, so transcription doesn't have to guess. A pickup played during the count-in is kept as a pickup bar.
 
+### Piano-roll editor
+
+Open it with **✎ Edit notes** on any piano-roll take, or **🎹 Edit in piano roll** on a Melody block.
+- **Tools:**
+  - **Select:** drag notes to move them, drag a note's right edge to change its length, drag on empty space to select several.
+  - **Draw:** click to add a note; drag to set its length.
+  - **Erase:** click or drag over notes.
+- **Snap:** 1/4, 1/8, 1/16, triplets or off.
+- **Hands:** notes are coloured by hand. **→ RH** / **→ LH** moves the selected notes to the other hand.
+- **Editing:** **Quantise** snaps notes to the grid, ▲▼ transposes, and there's zoom, undo and redo.
+- **Playback:** with speed (50%, 75%, 100%), loop and click.
+- **Keys:** Delete; ↑↓ (Shift = octave); ←→ moves by the snap; Ctrl/Cmd+A selects all; Ctrl/Cmd+Z / Shift+Z undo and redo; Space plays; V / D / E switch tools; Q quantises.
+- **Saving:** **Save → chord chart** and **Save → melody sheet** turn the edited notes straight into sheets. From a Melody block, **Save + write chord chart** works out the chords from both hands.
+
+### Hand colours
+
+Choose **Hand colours** in the sidebar: match the colour scheme, LH blue · RH orange, LH blue · RH red, LH green · RH purple, LH teal · RH pink, or pick your own. The colours apply to the piano roll, keyboard diagrams, the melody sheet and printed sheets.
+
 ### Chord charts and melody transcription
 
 - **Write a chart:** use **＋ New note → Chord chart**, or add a **📄 Chart** block to any note. Type it the way you'd write it on paper:
@@ -94,11 +112,15 @@ With the count-in, the take knows its exact tempo, bars and time signature, so t
   - the most common **rhythm pattern**, written as counts: `1 (&) 2 & (3) & 4 (&)`
 
   If the tempo came out double or half, press **½ tempo** or **2× tempo**. If the bar lines are a beat off, use **◀ Bar line ▶**. Change the time signature from the menu.
-- **Melody (its own block):** use **🎼 Melody** to record a tune with the count-in, or type it, e.g. `| G | C CB A G | EF G – C |`. Bars go between `|` and beats are separated by spaces. Notes in one beat share it (`CC` = two eighths, `CDEF` = four sixteenths), `–` holds and `·` rests. Add `C5` for an octave, or leave it off and the nearest one is used. A short first bar is a pickup. After any piano-roll take, **🎼 Transcribe melody** writes its top line as a separate Melody block; **📄 Write chord chart** writes only the chords.
-  - It's shown beat by beat, with counts (`1`, `2 &`, `3 e & a`) and octaves as C4-style numbers or `C'` / `C,` marks. You can also switch to scale-degree **numbers (1 2 3)** or **solfa (Do Re Mi)**.
-  - **Lyrics:** type them with hyphens between syllables (`faith- ful`) and each syllable sits under its note.
-  - **Ear training:** hides the notes, and each one appears when the student plays it right in Play along.
-  - A melody has its own key, time and tempo, and prints, copies and saves as .txt just like a chart.
+- **Melody (its own block):** use **🎼 Melody**.
+  - **Recording:** the recorder bar at the top has ● Record, time signature, tempo (or Tap), count-in and metronome.
+  - **Typing:** e.g. `RH: | G | C CB A G |` and `LH: | · | [C3G3] – [F2C3] [G2D3] |`. Bars go between `|` and beats are separated by spaces. Notes in one beat share it (`CC` = two eighths). `[C3G3]` means notes played together; `–` holds and `·` rests. A line without `RH:` / `LH:` is the right hand. A short first bar is a pickup.
+  - **From a take:** **🎼 Transcribe melody** writes the top line as the right hand, and everything below middle C that isn't melody as the left hand.
+- **Both hands in the same bar:** the melody sheet lines up, beat by beat, the **chord names**, the **right hand**, the **left hand** (notes played together are stacked), the **counts** and the **lyrics**, in your hand colours. Left hand, chord names, hand colours and counts can each be switched off.
+  - Each note can show as letters, scale-degree **numbers (1 2 3)** or **solfa (Do Re Mi)**, with octaves as C4-style numbers or `C'` / `C,` marks.
+  - **Play** both hands, the right only or the left only, at 50% to 100% speed with an optional click.
+  - **🎹 Play along** waits for each note, or for the whole chord when both hands play together.
+  - **Ear training** hides the notes until they're played correctly.
 - **Practising it:**
   - **▶ Play chart** gives a count-in, a click and a highlight that moves bar by bar, with a loop option.
   - **▶ Play** (melody) plays at 50%, 75% or 100% speed, with an optional click, and highlights each note.
