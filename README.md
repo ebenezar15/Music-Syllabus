@@ -64,6 +64,33 @@ To build the Mac app yourself: `cd desktop && npm install && npm run dist` (on a
 - **MIDI file export:** **⬇ .mid** on any take saves a standard MIDI file you can drag into Logic, GarageBand or any DAW.
 - **App sound switch:** turn the app's own piano sound off if your keyboard already makes sound.
 
+### Chord charts and melody transcription
+
+- **Write a chart:** use **＋ New note → Chord chart**, or add a **📄 Chart** block to any note. Type it the way you'd write it on paper:
+  ```
+  Verse :
+  | Bb | F | Gm . . Eb | Bb . F . |
+  | Bb7 | Eb F7 Bb . | Cm . Eb . | F |
+  ```
+  A single chord fills the bar. Otherwise each chord or `.` takes one beat: `Gm . . Eb` is Gm for three beats, Eb for one. Slash chords (`Bb/D`) work, `%` repeats the previous bar, and `x2` at the end of a line repeats it. Chords Riffbook doesn't recognise are flagged.
+- **The sheet:** it's laid out like a printed lead sheet, with the title, `Key - Bb | 4/4 | T - 90bpm`, sections and bars. **🖨 Print / PDF** prints just the sheet; choose *Save as PDF* in the print dialog. **⧉ Copy** and **⬇ .txt** give you the plain text.
+- **Charts from a recording:** after any take (🎹 MIDI capture, Rewind or a piano-roll block), press **📄 Write chord chart + melody**. Riffbook works out:
+  - the **tempo**: found from your playing, or exact if you recorded with the count-in
+  - the **downbeat**, and the **time signature** (4/4 or 3/4)
+  - the **key**
+  - every **chord**, with **inversions and slash chords** (`D/F♯`) and voicings missing the 5th (`Bb7`)
+  - where each chord changes inside the bar
+  - the most common **rhythm pattern**, written as counts: `1 (&) 2 & (3) & 4 (&)`
+
+  If the tempo came out double or half, press **½ tempo** or **2× tempo**. If the bar lines are a beat off, use **◀ Bar line ▶**. Change the time signature from the menu.
+- **Melody in letters:** the top line of what you played is written in letters, beat by beat. Notes that share a beat are written together, `–` holds a note and `·` is a rest, so you get `| C CB A G | EF G – C |` with a pickup bar if there is one. Each beat has its count underneath (`1`, `2 &`, `3 e & a`). The octave is shown as C4-style numbers, `C'` / `C,` marks, or hidden. You can also switch to scale-degree **numbers (1 2 3)** or **solfa (Do Re Mi)**.
+- **Practising it:**
+  - **▶ Play chart** gives a count-in, a click and a highlight that moves bar by bar, with a loop option.
+  - **▶ Play melody** plays at 50%, 75% or 100% speed and highlights each note.
+  - **🎹 Play along** waits on each melody note until you play it on your keyboard, then logs the practice.
+- **Transposing:** the chart's **Key** menu moves the chords and melody to a new key. **View in key** shows them in another key without changing anything, and **1 4 5** shows the chart in Nashville numbers.
+- **Finding charts:** the **📄 Chord charts** shortcut lists every note that has a chart.
+
 ### Capturing from your MIDI keyboard
 
 Plug a USB/Bluetooth MIDI keyboard into your computer, open the app from this repository in **Chrome or Edge**, and either click **🎹 MIDI capture** in Riffbook or **Connect MIDI keyboard** in the Chord Library editor. Then:

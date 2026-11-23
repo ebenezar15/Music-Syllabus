@@ -110,18 +110,35 @@
   }
 
   // Name a set of notes (lowest = bass), e.g. "Cmaj7/E"
+  // Chord qualities tried when naming a chord on a given root, most common first
+  const NAME_ORDER = ['', 'm', '7', 'maj7', 'm7', '6', 'm6', 'sus4', 'sus2', 'add9', 'madd9', '7sus4', 'dim', 'aug', 'dim7', 'm7b5', 'mMaj7', 'aug7', '69', '9', 'maj9', 'm9', '11', 'm11', '13', '7b9', '7#9', '5'];
+  const pcKey = (pcs) => Array.from(new Set(pcs.map((p) => M.mod(p)))).sort((a, b) => a - b).join(',');
+  function rootedName(pcs, root, flat) {
+    const want = pcKey(pcs);
+    for (const suf of NAME_ORDER) {
+      const ch = M.CHORDS[suf];
+      if (ch && pcKey(ch.formula.map((f) => root + f.semis)) === want) return M.nameOf(root, flat) + suf;
+    }
+    return '';
+  }
+  // Name a set of notes (lowest = bass), e.g. "C6", "Bb7" (5th left out), "Cmaj7/E", "G/B"
   function detectName(midis, flat) {
     const s = midis.slice().sort((a, b) => a - b);
     if (s.length < 2) return '';
     const bass = s[0] % 12;
-    let name = M.identify(s.map((m) => m % 12), flat, bass);
-    if (name.includes('-')) {
-      const up = M.identify(s.slice(1).map((m) => m % 12), flat);
-      return up.includes('-') ? '' : up + '/' + M.nameOf(bass, flat);
-    }
-    const ch = M.parseChord(name);
-    if (ch && M.pcOf(ch.root) !== bass) name += '/' + M.nameOf(bass, flat);
-    return name;
+    const pcs = Array.from(new Set(s.map((m) => m % 12)));
+    const slash = (name, root) => (root === bass ? name : name + '/' + M.nameOf(bass, flat));
+    // 1. a chord built on the bass note, complete or with the 5th left out
+    const onBass = rootedName(pcs, bass, flat) || (pcs.length >= 2 ? rootedName(pcs.concat([bass + 7]), bass, flat) : '');
+    if (onBass) return onBass;
+    // 2. an inversion: another root, complete or without its 5th
+    const any = M.identify(pcs, flat, bass);
+    if (!any.includes('-')) { const ch = M.parseChord(any); return ch ? slash(any, M.pcOf(ch.root)) : any; }
+    if (pcs.length >= 3) for (const r of pcs) { if (r === bass) continue; const n = rootedName(pcs.concat([r + 7]), r, flat); if (n) return slash(n, r); }
+    // 3. an upper structure over the bass
+    const upper = Array.from(new Set(s.slice(1).map((m) => m % 12)));
+    if (upper.length >= 3 && !upper.includes(bass)) { const up = M.identify(upper, flat); if (!up.includes('-')) return up + '/' + M.nameOf(bass, flat); }
+    return '';
   }
 
   /* Live note input from the computer keyboard and MIDI.

@@ -1,6 +1,6 @@
 /* Riffbook offline support: use the network when it's there, fall back to the saved copy when it isn't */
-const CACHE = 'riffbook-v1';
-const SHELL = ['./', 'index.html', 'riffbook.css', 'riffbook.js', '../css/styles.css', '../js/music.js', '../js/music-ui.js', 'icons/icon-192.png', 'icons/icon-512.png', 'manifest.webmanifest'];
+const CACHE = 'riffbook-v2';
+const SHELL = ['./', 'index.html', 'riffbook.css', 'riffbook.js', 'transcribe.js', '../css/styles.css', '../js/music.js', '../js/music-ui.js', 'icons/icon-192.png', 'icons/icon-512.png', 'manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

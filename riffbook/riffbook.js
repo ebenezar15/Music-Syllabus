@@ -314,6 +314,7 @@
     all: { label: 'All notes', icon: '▤', test: () => true },
     pinned: { label: 'Pinned', icon: '📌', test: (n) => n.pinned },
     favourite: { label: 'Favourites', icon: '★', test: (n) => n.favourite },
+    charts: { label: 'Chord charts', icon: '📄', test: (n) => (n.blocks || []).some((b) => b.kind === 'chart') },
     practising: { label: 'Practising', icon: '◔', test: (n) => n.status === 'practising' },
     review: { label: 'Revisit', icon: '↻', test: needsReview, hint: 'Not practised for over a week' },
     mastered: { label: 'Mastered', icon: '✓', test: (n) => n.status === 'mastered' }
@@ -581,7 +582,7 @@
   const flush = () => { if (current && current._dirty) { clearTimeout(saveTimer); return Store.save(current); } return Promise.resolve(); };
 
   function closeNote() {
-    flush();
+    flush(); stopChart(); follow.on = false;
     if (rollRec.block || micRec.mr) { toast('Stop the recording first'); return; }
     document.body.classList.remove('note-open');
     renderRail(); renderList();
@@ -643,7 +644,7 @@
       <section>
         <div class="spread"><h3>Blocks</h3>
           <div class="add-blocks" role="group" aria-label="Add a block">
-            <button data-add="chords">♫ Chords</button><button data-add="placement">✋ Placement</button><button data-add="roll">▦ Piano roll</button><button data-add="audio">🎙 Audio</button><button data-add="image">🖼 Image</button><button data-add="checklist">☑ Checklist</button>
+            <button data-add="chart">📄 Chart</button><button data-add="chords">♫ Chords</button><button data-add="placement">✋ Placement</button><button data-add="roll">▦ Piano roll</button><button data-add="audio">🎙 Audio</button><button data-add="image">🖼 Image</button><button data-add="checklist">☑ Checklist</button>
           </div></div>
         <div id="blocks">${(n.blocks || []).map((b, i) => blockHTML(n, b, i, semis)).join('') || '<p class="small muted">Add a block to attach chords, a hand placement, a piano-roll take, a recording, an image or a checklist.</p>'}</div>
       </section>
@@ -683,7 +684,7 @@
     bindEditor(n, semis);
   }
 
-  const blockName = (k) => ({ chords: 'Chords', placement: 'Placement', roll: 'Piano roll', audio: 'Recording', image: 'Image', checklist: 'Checklist' }[k] || 'Block');
+  const blockName = (k) => ({ chords: 'Chords', placement: 'Placement', roll: 'Piano roll', audio: 'Recording', image: 'Image', checklist: 'Checklist', chart: 'Chord chart' }[k] || 'Block');
 
   function blockHTML(n, b, i, semis) {
     const head = `<div class="blk-head"><input class="blk-label" data-label="${i}" value="${esc(b.label || '')}" placeholder="${blockName(b.kind)}" aria-label="Block name">
@@ -726,18 +727,280 @@
         ${recording ? `<div class="mini-input">${U.voicingSVG({ lh: [], rh: [] }, { from: 48, to: 83, w: 22, h: 70 })}</div>` : ''}
         ${segs.length ? `<div class="analysis"><div class="small muted">Chords found in this take (${segs.length}) — tap to hear</div>
           <div class="chips">${segs.map((sg, j) => `<button class="chip" data-segplay="${i}:${j}" title="${esc(sg.notes.map((m) => U.noteName(m, keyFlat(ui.viewKey || n.key || 'C'))).join(' '))}">${esc(sg.name ? M.pretty(sg.name) : '?')}<small>beat ${+(sg.t + 1).toFixed(2)}</small></button>`).join('')}</div>
-          <div class="row small" style="margin-top:8px"><button class="btn sm" data-seg2prog="${i}">＋ Add as chord progression</button><button class="btn sm" data-seg2place="${i}">＋ Add voicings as placements</button></div></div>` : ''}`;
+          <div class="row small" style="margin-top:8px"><button class="btn sm" data-seg2prog="${i}">＋ Add as chord progression</button><button class="btn sm" data-seg2place="${i}">＋ Add voicings as placements</button><button class="btn sm primary" data-seg2chart="${i}" title="Work out tempo, bars, time signature, key, chords, rhythm and melody">📄 Write chord chart + melody</button></div></div>` : ''}`;
     } else if (b.kind === 'audio') {
       body = b.ref ? `<audio controls preload="none" data-ref="${esc(b.ref)}"></audio>`
         : `<div class="row small"><button class="btn sm" data-mic="${i}">${micRec.block === b.id ? '■ Stop recording' : '🎙 Record'}</button><label class="btn sm">⬆ Upload<input type="file" data-upaudio="${i}" accept="audio/*,video/webm,video/mp4,.m4a,.webm" hidden></label><span class="muted" data-mstatus="${i}">${micRec.block === b.id ? '● Recording…' : ''}</span></div>`;
     } else if (b.kind === 'image') {
       body = b.ref ? `<img class="blk-img" alt="${esc(b.label || 'Image')}" data-ref="${esc(b.ref)}">`
         : `<label class="btn sm">⬆ Choose an image<input type="file" data-upimg="${i}" accept="image/png,image/jpeg,image/gif,image/webp" hidden></label> <span class="small muted">A photo of a chart, or a screenshot of your DAW piano roll.</span>`;
+    } else if (b.kind === 'chart') {
+      body = chartBlockHTML(n, b, i, semis);
     } else if (b.kind === 'checklist') {
       body = `<div class="checks">${(b.items || []).map((it, j) => `<label class="check"><input type="checkbox" data-chk="${i}:${j}" ${it.done ? 'checked' : ''}><input type="text" data-chktxt="${i}:${j}" value="${esc(it.t)}" aria-label="Item"><button class="x" data-chkdel="${i}:${j}" aria-label="Remove item">✕</button></label>`).join('')}</div>
         <button class="btn sm ghost" data-chkadd="${i}">＋ Item</button>`;
     }
     return `<div class="blk blk-${b.kind}" id="blk-${esc(b.id)}" data-i="${i}">${head}${body}${foot}</div>`;
+  }
+
+  /* ======================= Chord charts & melody transcription ======================= */
+  const TX = window.Transcribe;
+  const chartPlay = { timers: [], block: null };
+  const follow = { on: false, block: null, notes: [], idx: 0, n: null };
+  const SIGS = [2, 3, 4, 6];
+  const chartKeyOf = (n, b) => b.key || n.key || 'C';
+  const chartLabel = (tok, key) => (TX.isHold(tok) || tok === '%' || tok === 'N.C.' ? tok : ui.numbers ? toNumber(tok, key) : M.pretty(tok));
+  function shownChart(n, b, semis) {
+    const key = chartKeyOf(n, b);
+    if (!semis) return { key, text: b.text || '', notes: (b.melody && b.melody.notes) || [] };
+    const to = ui.viewKey, fl = keyFlat(to);
+    return { key: to, text: TX.mapChartChords(b.text, (c) => M.transposeChord(c, semis, fl)), notes: ((b.melody && b.melody.notes) || []).map((x) => ({ ...x, m: x.m + semis })) };
+  }
+  // Octave numbers next to scale-degree digits would read as one number, so degrees and solfa use ' and , marks
+  function melodyOpts(b, key) { const names = b.names || 'letters', oct = b.octaves || 'number'; return { key, names, octaves: names !== 'letters' && oct === 'number' ? 'marks' : oct }; }
+  function noteHTML(m, opts) {
+    const l = TX.noteLabel(m, opts);
+    return opts.octaves === 'number' ? `${esc(l.text)}<sub>${l.octText}</sub>` : esc(l.text + l.octText);
+  }
+  function sheetHTML(n, b, i, semis) {
+    const { key, text, notes } = shownChart(n, b, semis);
+    const beats = b.beats || 4;
+    const parsed = TX.parseChart(text, beats);
+    let html = `<div class="sheet" data-sheet="${i}">
+      <div class="sh-title">${esc(b.label || n.title || 'Untitled')}</div>
+      <div class="sh-meta">Key - ${esc(M.pretty(key))} | ${beats === 6 ? '6/8' : beats + '/4'} | T - ${b.bpm || 80}bpm${b.feel ? ' | ' + esc(b.feel) : ''}</div>`;
+    parsed.sections.forEach((s, si) => {
+      if (s.name) html += `<div class="sh-sec">${esc(s.name)} :</div>`;
+      s.lines.forEach((l, li) => {
+        if (!l.bars) { html += `<div class="sh-text">${esc(l.text)}</div>`; return; }
+        html += `<div class="sh-line">| ${l.bars.map((bar, bi) => `<span class="sh-bar" data-ref="${si}:${li}:${bi}">${esc((bar.raw || '').split(/\s+/).filter(Boolean).map((t) => chartLabel(t, key)).join(' ') || '.')}</span>`).join(' | ')} |${l.times > 1 ? ` <span class="sh-rep">×${l.times}</span>` : ''}</div>`;
+      });
+    });
+    if (b.rhythm && b.showRhythm !== false) {
+      const r = b.rhythm, cells = r.grid.split('');
+      html += `<div class="sh-sec">Rhythm :</div><div class="sh-rhythm" style="--cols:${cells.length}">${cells.map((c, k) => `<span class="rc ${c === 'x' ? 'hit' : ''} ${k % r.sub === 0 ? 'on-beat' : ''}" aria-label="${c === 'x' ? 'play' : 'rest'}"></span>`).join('')}${r.counts.map((c) => `<span class="rcount">${esc(c)}</span>`).join('')}</div>
+        <div class="sh-note">Count it: ${r.counts.map((c, k) => (cells[k] === 'x' ? `<b>${esc(c)}</b>` : `(${esc(c)})`)).join(' ')}${r.share < 1 ? ` · used in ${Math.round(r.share * 100)}% of bars` : ''}</div>`;
+    }
+    if (notes.length && b.showMelody !== false) {
+      const q = (b.melody && b.melody.q) || 0.5;
+      const grid = TX.melodyGrid(notes, beats, q);
+      const opts = melodyOpts(b, key);
+      html += `<div class="sh-sec">Melody :</div>`;
+      for (let k = 0; k < grid.length; k += 4) {
+        html += `<div class="mel-line">${grid.slice(k, k + 4).map((bar) => `<span class="mel-bar ${bar.bar < 0 ? 'pickup' : ''}">${bar.beats.map((bt) => `<span class="mel-beat"><span class="mel-notes">${bt.tokens.map((t) => (t.hold ? '<span class="mh">–</span>' : t.rest ? '<span class="mr">·</span>' : `<span class="mn" data-mi="${t.i}">${noteHTML(t.m, opts)}</span>`)).join('')}</span>${b.showCounts !== false ? `<span class="mel-count">${esc(bt.count)}</span>` : ''}</span>`).join('')}</span>`).join('')}</div>`;
+      }
+      html += `<div class="sh-note">Notes in one beat are written together (CC = two quick notes). – holds the note, · is a rest.${opts.octaves === 'number' ? ' Small numbers are the octave (C4 = middle C).' : opts.octaves === 'marks' ? " ' = octave up, , = octave down from middle C." : ''}</div>`;
+    }
+    if (parsed.unknown.length) html += `<div class="sh-warn no-print">Not a chord I know: ${parsed.unknown.map((u) => `<code>${esc(u)}</code>`).join(' ')}</div>`;
+    return html + '</div>';
+  }
+  function chartBlockHTML(n, b, i, semis) {
+    const key = chartKeyOf(n, b), src = b.src && (n.blocks || []).find((x) => x.id === b.src.roll && x.roll);
+    const playing = chartPlay.block === b.id, following = follow.on && follow.block === b.id;
+    return `${sheetHTML(n, b, i, semis)}
+      <div class="chart-tools no-print">
+        <div class="row small">
+          <button class="btn sm primary" data-chplay="${i}">${playing ? '■ Stop' : '▶ Play chart'}</button>
+          <label><input type="checkbox" data-chloop="${i}" ${b.loop ? 'checked' : ''}> Loop</label>
+          <label><input type="checkbox" data-chclick="${i}" ${b.click !== false ? 'checked' : ''}> Click</label>
+          <label>Key <select data-chkey="${i}" ${semis ? 'disabled' : ''}>${M.KEYS.map((k) => `<option ${k.name === key ? 'selected' : ''}>${k.name}</option>`).join('')}</select></label>
+          <label>Time <select data-chbeats="${i}">${SIGS.map((s) => `<option value="${s}" ${s === (b.beats || 4) ? 'selected' : ''}>${s === 6 ? '6/8' : s + '/4'}</option>`).join('')}</select></label>
+          <label>Tempo <input type="number" data-chbpm="${i}" value="${b.bpm || 80}" min="30" max="260" style="width:64px"></label>
+          <button class="btn sm" data-chedit="${i}">${b.editing ? '✓ Done editing' : '✎ Edit chart'}</button>
+          <button class="btn sm ghost" data-chcopy="${i}">⧉ Copy</button>
+          <button class="btn sm ghost print-only" data-chprint="${i}" title="Print, or choose Save as PDF in the print dialog">🖨 Print / PDF</button>
+          <button class="btn sm ghost print-only" data-chtxt="${i}">⬇ .txt</button>
+        </div>
+        ${b.editing ? `<textarea class="chart-text" data-chtext="${i}" rows="${Math.min(18, Math.max(6, (b.text || '').split('\n').length + 2))}" spellcheck="false" aria-label="Chart text">${esc(b.text || '')}</textarea>
+          <div class="small muted">Write a section as <code>Verse :</code>, then bars between <code>|</code>. One chord fills the bar; otherwise one chord or <code>.</code> per beat (<code>Gm . . Eb</code> = Gm for 3 beats, Eb for 1). Slash chords like <code>Bb/D</code>, <code>%</code> repeats the bar, <code>x2</code> at the end repeats the line.</div>` : ''}
+        ${src ? `<div class="row small retx"><span class="muted">From the take${b.src.conf != null ? ` · tempo confidence ${Math.round(b.src.conf * 100)}%` : ''}:</span>
+          <button class="btn sm ghost" data-rtx="half:${i}" title="Tempo is double what it should be">½ tempo</button><button class="btn sm ghost" data-rtx="double:${i}" title="Tempo is half what it should be">2× tempo</button>
+          <button class="btn sm ghost" data-rtx="left:${i}" title="Move bar lines one beat earlier">◀ Bar line</button><button class="btn sm ghost" data-rtx="right:${i}" title="Move bar lines one beat later">Bar line ▶</button>
+          <span class="muted">Re-transcribing replaces edits to the chart.</span></div>` : ''}
+        ${(b.melody && b.melody.notes.length) ? `<div class="row small mel-tools">
+          <b>Melody</b>
+          <label>Show <select data-mnames="${i}"><option value="letters" ${(b.names || 'letters') === 'letters' ? 'selected' : ''}>Letters (C D E)</option><option value="degree" ${b.names === 'degree' ? 'selected' : ''}>Numbers (1 2 3)</option><option value="solfa" ${b.names === 'solfa' ? 'selected' : ''}>Solfa (Do Re Mi)</option></select></label>
+          <label>Octave <select data-moct="${i}"><option value="number" ${(b.octaves || 'number') === 'number' ? 'selected' : ''}>C4 numbers</option><option value="marks" ${b.octaves === 'marks' ? 'selected' : ''}>C' marks</option><option value="none" ${b.octaves === 'none' ? 'selected' : ''}>Hide</option></select></label>
+          <label><input type="checkbox" data-mcounts="${i}" ${b.showCounts !== false ? 'checked' : ''}> Counts</label>
+          <label>Speed <select data-mspeed="${i}">${[0.5, 0.75, 1].map((s) => `<option value="${s}" ${(b.speed || 1) === s ? 'selected' : ''}>${s * 100}%</option>`).join('')}</select></label>
+          <button class="btn sm" data-mplay="${i}">▶ Play melody</button>
+          <button class="btn sm ${following ? 'primary' : ''}" data-mfollow="${i}" title="Play the melody on your keyboard; it waits for each right note">${following ? '■ Stop practice' : '🎹 Play along (waits for you)'}</button>
+          <label><input type="checkbox" data-mshow="${i}" ${b.showMelody !== false ? 'checked' : ''}> On sheet</label>
+        </div>` : ''}
+        ${b.rhythm ? `<label class="small"><input type="checkbox" data-rshow="${i}" ${b.showRhythm !== false ? 'checked' : ''}> Show rhythm pattern on sheet</label>` : ''}
+      </div>`;
+  }
+
+  function stopChart() { chartPlay.timers.forEach(clearTimeout); chartPlay.timers = []; chartPlay.block = null; M.stopAll(); $$('.sh-bar.on, .mn.on').forEach((e) => e.classList.remove('on')); }
+  function playChart(n, b, i, semis) {
+    if (chartPlay.block === b.id) { stopChart(); renderEditor(); return; }
+    stopChart();
+    const { text } = shownChart(n, b, semis);
+    const tl = TX.chartTimeline(TX.parseChart(text, b.beats || 4));
+    if (!tl.length) { toast('Add some bars first'); return; }
+    chartPlay.block = b.id; renderEditor();
+    const c = M.audio(), P = 60 / (b.bpm || 80) * ((b.beats || 4) === 6 ? 0.5 : 1);
+    const beatsPerBar = b.beats || 4;
+    const run = (start) => {
+      for (let k = 0; k < beatsPerBar; k++) M.click(start + k * P, k === 0); // count-in bar
+      const t0 = start + beatsPerBar * P;
+      tl.forEach((x, k) => {
+        const when = t0 + k * P;
+        if (b.click !== false) M.click(when, x.beat === 0);
+        if (x.isNew && x.chord) { let len = 1; while (tl[k + len] && !tl[k + len].isNew) len++; M.playChord(x.chord, { when, dur: len * P * 0.95, style: 'block' }); }
+        if (x.beat === 0) chartPlay.timers.push(setTimeout(() => { $$('.sh-bar.on').forEach((e) => e.classList.remove('on')); const el = $(`#blk-${CSS.escape(b.id)} .sh-bar[data-ref="${x.ref}"]`); if (el) el.classList.add('on'); }, Math.max(0, (when - c.currentTime) * 1000)));
+      });
+      const end = t0 + tl.length * P;
+      chartPlay.timers.push(setTimeout(() => {
+        if (chartPlay.block !== b.id) return;
+        if (b.loop) { chartPlay.timers = []; run(M.audio().currentTime + 0.05); } else { stopChart(); renderEditor(); }
+      }, (end - c.currentTime) * 1000));
+    };
+    run(c.currentTime + 0.1);
+  }
+  function playMelody(n, b, semis) {
+    stopChart();
+    const { notes } = shownChart(n, b, semis);
+    if (!notes.length) return;
+    const c = M.audio(), P = 60 / (b.bpm || 80) / (b.speed || 1), first = Math.min(...notes.map((x) => x.t)), t0 = c.currentTime + 0.15;
+    chartPlay.block = 'melody';
+    notes.forEach((x, k) => {
+      const when = t0 + (x.t - first) * P;
+      M.tone(x.m, when, Math.max(0.1, x.d * P * 0.95), { vel: 0.25 });
+      chartPlay.timers.push(setTimeout(() => { $$('.mn.on').forEach((e) => e.classList.remove('on')); const el = $(`#blk-${CSS.escape(b.id)} .mn[data-mi="${k}"]`); if (el) el.classList.add('on'); }, Math.max(0, (when - c.currentTime) * 1000)));
+    });
+    const end = t0 + (Math.max(...notes.map((x) => x.t + x.d)) - first) * P;
+    chartPlay.timers.push(setTimeout(() => { $$('.mn.on').forEach((e) => e.classList.remove('on')); chartPlay.block = null; }, (end - c.currentTime) * 1000 + 300));
+  }
+  // Play-along: highlights the next melody note and waits until it is played
+  function startFollow(n, b, semis) {
+    if (follow.on) { follow.on = false; renderEditor(); return; }
+    ensureInput();
+    if (!midiState.connected && navigator.requestMIDIAccess && !embedded) connectMidi();
+    Object.assign(follow, { on: true, block: b.id, notes: shownChart(n, b, semis).notes, idx: 0, n, start: Date.now(), misses: 0 });
+    renderEditor();
+    markFollow();
+    toast('Play the highlighted note — any octave counts');
+  }
+  function markFollow() {
+    $$('.mn').forEach((e) => e.classList.remove('on', 'done', 'miss'));
+    const sheet = $(`#blk-${CSS.escape(follow.block)} .sheet`); if (!sheet) return;
+    for (let k = 0; k < follow.idx; k++) { const el = $(`.mn[data-mi="${k}"]`, sheet); if (el) el.classList.add('done'); }
+    const cur = $(`.mn[data-mi="${follow.idx}"]`, sheet); if (cur) { cur.classList.add('on'); cur.scrollIntoView({ block: 'nearest' }); }
+  }
+  function followCheck(m) {
+    const want = follow.notes[follow.idx]; if (!want) return;
+    if (m % 12 === want.m % 12) {
+      follow.idx++;
+      if (follow.idx >= follow.notes.length) {
+        const mins = Math.max(1, Math.round((Date.now() - follow.start) / 60000)), n = follow.n;
+        follow.on = false; renderEditor();
+        toast(`Melody complete${follow.misses ? ` · ${follow.misses} wrong notes` : ' · no mistakes!'}`);
+        logPractice(n, mins, null, `Melody play-along${follow.misses ? `, ${follow.misses} wrong notes` : ', no mistakes'}`);
+        return;
+      }
+      markFollow();
+    } else {
+      follow.misses++;
+      const el = $(`#blk-${CSS.escape(follow.block)} .mn[data-mi="${follow.idx}"]`); if (el) { el.classList.add('miss'); setTimeout(() => el.classList.remove('miss'), 300); }
+    }
+  }
+  function chartPlainText(n, b) {
+    const key = chartKeyOf(n, b), beats = b.beats || 4;
+    let out = `${b.label || n.title || 'Untitled'}\nKey - ${key} | ${beats === 6 ? '6/8' : beats + '/4'} | T - ${b.bpm || 80}bpm\n\n${b.text || ''}`;
+    if (b.rhythm) out += `\n\nRhythm : ${b.rhythm.counts.map((c, k) => (b.rhythm.grid[k] === 'x' ? c : '(' + c + ')')).join(' ')}`;
+    if (b.melody && b.melody.notes.length) out += `\n\nMelody :\n${TX.melodyText(TX.melodyGrid(b.melody.notes, beats, b.melody.q || 0.5), melodyOpts(b, key))}`;
+    return out;
+  }
+  // Print just the sheet: copy it into its own top-level container so nothing else takes up the page
+  function printSheet(el) {
+    let root = $('#print-root');
+    if (!root) { root = document.createElement('div'); root.id = 'print-root'; document.body.appendChild(root); }
+    root.innerHTML = ''; root.appendChild(el.cloneNode(true));
+    $$('.on, .done, .miss', root).forEach((x) => x.classList.remove('on', 'done', 'miss'));
+    document.body.classList.add('printing-sheet');
+    const done = () => { document.body.classList.remove('printing-sheet'); root.innerHTML = ''; window.removeEventListener('afterprint', done); };
+    window.addEventListener('afterprint', done);
+    window.print();
+    setTimeout(done, 1500);
+  }
+  function chartFromRoll(n, rollBlock, opts = {}) {
+    const r = TX.transcribe(rollBlock.roll, opts);
+    if (!r) return null;
+    return { key: r.key, beats: r.beatsPerBar, bpm: r.bpm, text: r.text, rhythm: r.rhythm, melody: r.melody, src: { roll: rollBlock.id, bpm: r.bpm, t0: r.t0, shift: opts.shift || 0, beats: opts.beatsPerBar || null, conf: r.confidence }, detected: r.keyLabel };
+  }
+  function bindCharts(n, semis, B) {
+    const pane = $('#note-pane');
+    $$('[data-seg2chart]', pane).forEach((x) => x.onclick = () => {
+      const rb = B(x.dataset.seg2chart);
+      const c = chartFromRoll(n, rb);
+      if (!c) { toast('Nothing to transcribe yet'); return; }
+      const blk = Object.assign({ id: uid('b'), kind: 'chart', label: n.title || 'Chart' }, c);
+      delete blk.detected;
+      n.blocks.splice(+x.dataset.seg2chart + 1, 0, blk);
+      if (!n.bpm || n.bpm === 80) n.bpm = c.bpm;
+      markDirty(true);
+      toast(`Chart written: ${c.bpm} bpm, ${c.beats === 6 ? '6/8' : c.beats + '/4'}, key ${c.detected}${c.melody ? ', with melody' : ''}`);
+      setTimeout(() => { const el = $('#blk-' + CSS.escape(blk.id)); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
+    });
+    $$('[data-chplay]', pane).forEach((x) => x.onclick = () => playChart(n, B(x.dataset.chplay), +x.dataset.chplay, semis));
+    $$('[data-chloop]', pane).forEach((x) => x.onchange = () => { B(x.dataset.chloop).loop = x.checked; markDirty(); });
+    $$('[data-chclick]', pane).forEach((x) => x.onchange = () => { B(x.dataset.chclick).click = x.checked; markDirty(); });
+    $$('[data-chbpm]', pane).forEach((x) => x.onchange = () => { B(x.dataset.chbpm).bpm = Math.max(30, Math.min(260, +x.value || 80)); markDirty(true); });
+    $$('[data-chbeats]', pane).forEach((x) => x.onchange = () => {
+      const b = B(x.dataset.chbeats), beats = +x.value;
+      const rb = b.src && n.blocks.find((y) => y.id === b.src.roll && y.roll);
+      if (rb) { const c = chartFromRoll(n, rb, { bpm: b.src.bpm, t0: b.src.t0, shift: b.src.shift, beatsPerBar: beats }); Object.assign(b, c); delete b.detected; } else b.beats = beats;
+      markDirty(true);
+    });
+    $$('[data-chkey]', pane).forEach((x) => x.onchange = () => {
+      const b = B(x.dataset.chkey), from = chartKeyOf(n, b), to = x.value;
+      const s = shiftBetween(from, to), fl = keyFlat(to);
+      b.text = TX.mapChartChords(b.text, (c) => M.transposeChord(c, s, fl));
+      if (b.melody) b.melody.notes = b.melody.notes.map((y) => ({ ...y, m: y.m + s }));
+      b.key = to; markDirty(true); toast('Chart moved to ' + M.pretty(to));
+    });
+    $$('[data-chedit]', pane).forEach((x) => x.onclick = () => { const b = B(x.dataset.chedit); b.editing = !b.editing; markDirty(true); if (b.editing) setTimeout(() => { const t = $(`[data-chtext="${x.dataset.chedit}"]`); t && t.focus(); }, 0); });
+    $$('[data-chtext]', pane).forEach((t) => {
+      t.oninput = () => {
+        const i = t.dataset.chtext, b = B(i);
+        b.text = t.value; markDirty();
+        const sheet = $(`[data-sheet="${i}"]`, pane);
+        if (sheet) { const tmp = document.createElement('div'); tmp.innerHTML = sheetHTML(n, b, i, semis); sheet.replaceWith(tmp.firstElementChild); }
+      };
+    });
+    $$('[data-chcopy]', pane).forEach((x) => x.onclick = () => {
+      const text = chartPlainText(n, B(x.dataset.chcopy));
+      (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(() => toast('Chart copied')).catch(() => { const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); toast('Chart copied'); } catch (e) { toast('Copy not available here'); } ta.remove(); });
+    });
+    $$('[data-chprint]', pane).forEach((x) => x.onclick = () => printSheet($(`[data-sheet="${x.dataset.chprint}"]`, pane)));
+    $$('[data-chtxt]', pane).forEach((x) => x.onclick = () => {
+      const b = B(x.dataset.chtxt), a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([chartPlainText(n, b)], { type: 'text/plain' }));
+      a.download = (b.label || n.title || 'chart').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') + '.txt'; a.click();
+    });
+    $$('[data-rtx]', pane).forEach((x) => x.onclick = () => {
+      const [act, i] = x.dataset.rtx.split(':'), b = B(i), rb = n.blocks.find((y) => y.id === b.src.roll && y.roll);
+      if (!rb) return;
+      const s = { ...b.src };
+      if (act === 'half') s.bpm = Math.round(s.bpm / 2);
+      if (act === 'double') s.bpm = Math.round(s.bpm * 2);
+      if (act === 'left') s.shift = (s.shift || 0) - 1;
+      if (act === 'right') s.shift = (s.shift || 0) + 1;
+      const c = chartFromRoll(n, rb, { bpm: s.bpm, t0: s.t0, shift: s.shift, beatsPerBar: b.beats });
+      Object.assign(b, c, { src: { ...c.src, t0: s.t0, shift: s.shift } }); delete b.detected;
+      markDirty(true); toast(`Now ${b.bpm} bpm`);
+    });
+    const setOpt = (attr, key, val) => $$(`[${attr}]`, pane).forEach((x) => x.onchange = () => { B(x.getAttribute(attr))[key] = val(x); markDirty(true); });
+    setOpt('data-mnames', 'names', (x) => x.value);
+    setOpt('data-moct', 'octaves', (x) => x.value);
+    setOpt('data-mcounts', 'showCounts', (x) => x.checked);
+    setOpt('data-mspeed', 'speed', (x) => +x.value);
+    setOpt('data-mshow', 'showMelody', (x) => x.checked);
+    setOpt('data-rshow', 'showRhythm', (x) => x.checked);
+    $$('[data-mplay]', pane).forEach((x) => x.onclick = () => playMelody(n, B(x.dataset.mplay), semis));
+    $$('[data-mfollow]', pane).forEach((x) => x.onclick = () => startFollow(n, B(x.dataset.mfollow), semis));
+    if (follow.on) markFollow();
   }
 
   const placeTool = { hand: 'rh', finger: '' };
@@ -817,6 +1080,7 @@
       if (kind === 'chords') Object.assign(blk, { prog: '', beats: 4 });
       if (kind === 'placement') Object.assign(blk, { lh: [], rh: [], fingers: {}, symbol: '' });
       if (kind === 'roll') blk.roll = { bpm: n.bpm || 80, events: [] };
+      if (kind === 'chart') Object.assign(blk, { label: n.title || '', key: n.key || 'C', beats: 4, bpm: n.bpm || 80, text: 'Verse :\n| C | G | Am | F |\n| C | G | F . G . | C |', editing: true });
       if (kind === 'checklist') blk.items = [{ t: '', done: false }];
       n.blocks = (n.blocks || []).concat([blk]); markDirty(true);
       setTimeout(() => { const el = $('#blk-' + blk.id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 30);
@@ -876,6 +1140,7 @@
       n.blocks.splice(+x.dataset.seg2prog + 1, 0, { id: uid('b'), kind: 'chords', label: 'Chords from ' + (B(x.dataset.seg2prog).label || 'take'), prog: segs.map((sg) => sg.name).join(' '), beats });
       markDirty(true); toast('Added ' + segs.length + ' chords');
     });
+    bindCharts(n, semis, B);
     $$('[data-seg2place]').forEach((x) => x.onclick = () => {
       const seen = new Set(), add = [];
       segsOf(x.dataset.seg2place).forEach((sg) => { const k = sg.notes.join(','); if (!seen.has(k) && add.length < 8) { seen.add(k); add.push({ id: uid('b'), kind: 'placement', label: sg.name || 'Voicing', symbol: sg.name || '', lh: sg.lh, rh: sg.rh, fingers: {} }); } });
@@ -947,6 +1212,7 @@
     rwOn(m, v);
     live.held.add(m); live.sustained.delete(m); live.grabbed.add(m);
     if (drill.on) drill.check();
+    if (follow.on) followCheck(m);
     const k = $(`.mini-input rect[data-m="${m}"]`); if (k) k.style.filter = 'brightness(.75)';
     showLive();
   }
@@ -985,7 +1251,7 @@
     markDirty(true);
   }
   function ensureInput() {
-    if (!rollRec.input) rollRec.input = U.noteInput({ on: liveOn, off: liveOff, pedal: livePedal, octave: (o) => toast('Octave ' + o), midiChange: (names) => { midiState.connected = names.length > 0; renderRail(); } }, { enabled: () => !!rollRec.block || !!grab.block || finder.on || drill.on });
+    if (!rollRec.input) rollRec.input = U.noteInput({ on: liveOn, off: liveOff, pedal: livePedal, octave: (o) => toast('Octave ' + o), midiChange: (names) => { midiState.connected = names.length > 0; renderRail(); } }, { enabled: () => !!rollRec.block || !!grab.block || finder.on || drill.on || follow.on });
   }
   let silentMidi = false;
   async function connectMidi() {
@@ -1003,9 +1269,9 @@
     if (rollRec.block === b.id) {
       rollRec.rec.stop();
       if (!rollRec.rec.events.length) { rollRec.block = null; rollRec.rec = null; renderEditor(); toast('Nothing recorded'); return; }
-      const qEl = $(`[data-rollq="${i}"]`); const q = qEl ? +qEl.value : 0.5;
+      const qEl = $(`[data-rollq="${i}"]`); const q = rollRec.free ? 0 : (qEl ? +qEl.value : 0.5);
       const events = rollRec.rec.quantised(q);
-      if (events.length) { b.roll = { bpm: rollRec.rec.bpm, events, recorded: Date.now() }; toast(`Saved a take with ${events.length} notes`); }
+      if (events.length) { b.roll = { bpm: rollRec.rec.bpm, events, recorded: Date.now(), clicked: !rollRec.free }; toast(`Saved a take with ${events.length} notes`); }
       rollRec.block = null; rollRec.rec = null;
       markDirty(true); return;
     }
@@ -1017,6 +1283,7 @@
     const bpm = (bpmEl && +bpmEl.value) || n.bpm || 80;
     const free = forceFree || (startEl && startEl.value === 'free');
     const started = () => { rollRec.status = '● Recording · press Stop when you finish'; const st = $(`[data-rollstatus="${i}"]`); if (st) st.textContent = rollRec.status; showLive(); };
+    rollRec.free = !!free;
     if (free) { rollRec.rec.arm(bpm, started); rollRec.status = 'Waiting — recording starts on your first note'; }
     renderEditor();
     if (!free) rollRec.rec.begin(bpm, true, started);
@@ -1242,6 +1509,7 @@
     { id: 'movement', icon: '⇄', name: 'Chord movement', desc: 'A progression with the voicing that makes it move.', make: (n) => { n.type = 'movement'; n.body = '# The movement\nFrom [C] to [F] via …\n\n- Where I use it:\n- Bass line:\n- Inner voice that moves:'; n.blocks = [{ id: uid('b'), kind: 'chords', label: 'Movement', prog: 'C C/E F G', beats: 2 }, { id: uid('b'), kind: 'placement', label: 'Key voicing', lh: [], rh: [], fingers: {}, symbol: '' }]; } },
     { id: 'placement', icon: '✋', name: 'Hand placement', desc: 'A keyboard diagram with fingering for both hands.', make: (n) => { n.type = 'placement'; n.body = 'Where my hands sit, which fingers, and why.'; n.blocks = [{ id: uid('b'), kind: 'placement', label: 'Placement', lh: [], rh: [], fingers: {}, symbol: '' }]; } },
     { id: 'lick', icon: '〰', name: 'Lick or run', desc: 'Capture a fill or run and a checklist to learn it in all keys.', make: (n) => { n.type = 'lick'; n.body = 'Where it fits: between vocal lines over [C]'; n.blocks = [{ id: uid('b'), kind: 'roll', label: 'The lick', roll: { bpm: n.bpm || 80, events: [] } }, { id: uid('b'), kind: 'checklist', label: 'Learn it', items: ['C', 'G', 'F', 'D', 'Bb'].map((k) => ({ t: 'Play it in ' + k, done: false })) }]; } },
+    { id: 'chart', icon: '📄', name: 'Chord chart', desc: 'A song chart like a PDF lead sheet: key, time, tempo, sections and bars. Print it or play along.', make: (n) => { n.type = 'song'; n.body = ''; n.blocks = [{ id: uid('b'), kind: 'chart', label: '', key: 'C', beats: 4, bpm: 80, editing: true, text: 'Verse :\n| C | G | Am . . F | C . G . |\n| Am | Dm | G | C |\n\nChorus :\n| F | G | Em Am | F . G . |' }]; } },
     { id: 'song', icon: '♫', name: 'Song arrangement', desc: 'Sections, chords and cues for a song you play.', make: (n) => { n.type = 'song'; n.body = '# Intro\n# Verse\n# Chorus\n# Bridge\n# Ending'; n.blocks = [{ id: uid('b'), kind: 'chords', label: 'Verse', prog: '', beats: 4 }, { id: uid('b'), kind: 'chords', label: 'Chorus', prog: '', beats: 4 }]; } },
     { id: 'blank', icon: '✎', name: 'Blank note', desc: 'Just write.', make: (n) => { n.type = 'idea'; } }
   ];
@@ -1366,7 +1634,7 @@
   }
   document.addEventListener('keydown', (e) => {
     if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName) || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (rollRec.block || drill.on || finder.on) return;
+    if (rollRec.block || drill.on || finder.on || follow.on) return;
     if (e.key === 'n') { e.preventDefault(); openTemplates(); }
     if (e.key === '/') { e.preventDefault(); $('#q') && $('#q').focus(); }
     if (e.key === 'Escape') { if (!$('#templates').hidden) { $('#templates').hidden = true; return; } if (document.body.classList.contains('rail-open')) { document.body.classList.remove('rail-open'); return; } if (document.body.classList.contains('note-open')) closeNote(); }

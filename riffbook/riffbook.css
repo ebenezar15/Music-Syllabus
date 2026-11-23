@@ -266,3 +266,51 @@ body.note-open .rb-list { display: none; }
 .dr-status { text-align: center; min-height: 1.5em; font-weight: 600; }
 .pm-chips .chip small { display: block; font-size: .65rem; font-weight: 500; opacity: .7; }
 .pm-chips .chip.hit { opacity: .45; }
+
+/* ===== Chord chart sheet (looks like a printed lead sheet) ===== */
+.sheet { background: #fff; color: #111; border-radius: 6px; padding: 34px clamp(18px, 5vw, 56px) 40px; box-shadow: 0 1px 2px rgba(0,0,0,.2), 0 10px 30px rgba(0,0,0,.18); font-family: var(--font); max-width: 760px; margin: 4px auto 12px; overflow-x: auto; }
+.sh-title { text-align: center; font-size: 1.7rem; font-weight: 500; letter-spacing: -0.01em; padding-right: 8%; }
+.sh-meta { text-align: right; font-size: .82rem; margin: 2px 0 30px; color: #222; }
+.sh-sec { font-size: 1.05rem; margin: 22px 0 10px; }
+.sh-line { font-size: 1.15rem; line-height: 1.5; margin: 0 0 14px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sh-bar { padding: 1px 5px; border-radius: 5px; transition: background .1s; }
+.sh-bar.on { background: #ffe27a; box-shadow: 0 0 0 2px #ffe27a; }
+.sh-rep { font-size: .9rem; color: #555; }
+.sh-text { margin: 0 0 10px; color: #333; font-style: italic; }
+.sh-note { font-size: .75rem; color: #555; margin-top: 6px; }
+.sh-warn { margin-top: 14px; font-size: .8rem; color: #b42318; }
+.sh-warn code { background: #fde8e7; border: 0; color: inherit; }
+.sh-rhythm { display: grid; grid-template-columns: repeat(var(--cols), minmax(22px, 34px)); gap: 2px 4px; text-align: center; }
+.sh-rhythm .rc { height: 18px; display: flex; align-items: center; justify-content: center; }
+.sh-rhythm .rc::before { content: ''; width: 4px; height: 4px; border-radius: 50%; background: #bbb; }
+.sh-rhythm .rc.hit::before { width: 12px; height: 12px; background: #111; }
+.sh-rhythm .rc.on-beat { border-left: 1px solid #ccc; }
+.sh-rhythm .rcount { font-size: .72rem; color: #555; }
+.mel-line { display: flex; flex-wrap: nowrap; margin: 0 0 12px; font-size: 1.1rem; }
+.mel-bar { display: flex; border-left: 1.5px solid #222; padding: 0 2px 0 6px; }
+.mel-bar:last-child { border-right: 1.5px solid #222; }
+.mel-bar.pickup { border-left-style: dashed; }
+.mel-beat { display: flex; flex-direction: column; align-items: flex-start; min-width: 2.7em; padding-right: .6em; }
+.mel-notes { white-space: nowrap; letter-spacing: .02em; }
+.mel-notes sub { font-size: .6em; color: #666; margin-right: 1px; }
+.mn { border-radius: 4px; padding: 0 1px; transition: background .1s; }
+.mn.on { background: #ffe27a; }
+.mn.done { color: #1f9d55; }
+.mn.miss { background: #fdd; }
+.mh, .mr { color: #888; }
+.mel-count { font-size: .68rem; color: #777; margin-top: 1px; white-space: nowrap; }
+.chart-tools { display: flex; flex-direction: column; gap: 8px; }
+.chart-text { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92rem; line-height: 1.6; }
+.retx, .mel-tools { padding: 8px 10px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line); }
+
+#print-root { display: none; }
+@media print {
+  html:has(> body.printing-sheet) { background: #fff !important; color-scheme: light; }
+  body.printing-sheet { background: #fff !important; height: auto !important; overflow: visible !important; }
+  body.printing-sheet > *:not(#print-root) { display: none !important; }
+  body.printing-sheet #print-root { display: block; }
+  body.printing-sheet #print-root .sheet { box-shadow: none; margin: 0; max-width: none; border-radius: 0; padding: 18mm 16mm; overflow: visible; }
+  body.printing-sheet #print-root .no-print { display: none !important; }
+  @page { size: A4; margin: 0; }
+}
+}
