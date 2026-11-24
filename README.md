@@ -76,6 +76,7 @@ Every recorder (piano-roll blocks, Melody blocks, and the 🎹 MIDI button) shar
 With the count-in, the take knows its exact tempo, bars and time signature, so transcription doesn't have to guess. A pickup played during the count-in is kept as a pickup bar.
 
 ### Piano-roll editor
+Click the ruler (or an empty spot) to move the ▼ marker; **Play** and **Record** start from it. **Record** gives a one-bar lead-in, then either *Retake (replace)* — replaces what you play over, only for the chosen hand if *Hand* is set — or *Add (overdub)*. The new notes come in selected, so **Q** quantises just them and Ctrl/Cmd+Z undoes the whole take. Recording follows *Speed*, so you can record at 50%. Editing a take updates the chord chart / melody sheet made from it (titles, lyrics and options are kept). Sheet titles and subtitles are edited by clicking them.
 
 Open it with **✎ Edit notes** on any piano-roll take, or **🎹 Edit in piano roll** on a Melody block.
 - **Tools:**
@@ -88,6 +89,13 @@ Open it with **✎ Edit notes** on any piano-roll take, or **🎹 Edit in piano 
 - **Playback:** with speed (50%, 75%, 100%), loop and click.
 - **Keys:** Delete; ↑↓ (Shift = octave); ←→ moves by the snap; Ctrl/Cmd+A selects all; Ctrl/Cmd+Z / Shift+Z undo and redo; Space plays; V / D / E switch tools; Q quantises.
 - **Saving:** **Save → chord chart** and **Save → melody sheet** turn the edited notes straight into sheets. From a Melody block, **Save + write chord chart** works out the chords from both hands.
+
+### Play through your VSTs (MIDI out)
+Once a MIDI keyboard is connected, the sidebar shows **Sound**. Pick a MIDI output there and all playback — takes, chords, charts, melody sheets, the piano-roll editor — is sent as MIDI instead of the built-in synth.
+On a Mac: open **Audio MIDI Setup → Window → Show MIDI Studio**, double-click **IAC Driver**, tick *Device is online*. Choose **IAC Driver Bus 1** in Riffbook, then in your DAW (Logic, Ableton, MainStage…) arm a track with your VST piano listening to that bus. Stop always sends all-notes-off. Your own playing isn't echoed (your keyboard already plays the DAW) unless you tick *Also send what I play live*.
+
+### Permissions
+MIDI connects automatically every time the app opens. The browser (or macOS, for the Mac app) asks for MIDI and microphone access once, then remembers the answer for the site/app. The Mac app allows both without any in-app prompt.
 
 ### Hand colours
 

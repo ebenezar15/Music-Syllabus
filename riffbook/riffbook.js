@@ -381,6 +381,7 @@
           <label title="Left hand colour"><span class="hand-dot lh"></span>LH <input type="color" id="hc-lh" value="${(ui.handColors && ui.handColors.lh) || '#3b7dd8'}"></label>
           <label title="Right hand colour"><span class="hand-dot rh"></span>RH <input type="color" id="hc-rh" value="${(ui.handColors && ui.handColors.rh) || '#e8664a'}"></label>
         </div>
+        ${midiState.connected ? soundOutHTML() : ''}
         <label class="small row" style="gap:6px;margin-top:6px"><input type="checkbox" id="app-sound" ${ui.sound !== false ? 'checked' : ''} style="width:15px;height:15px"> App plays sound when I play</label>
       </div>
       ${item('data-home="1"', isHome(), '⌂', 'Library home', null)}
@@ -428,6 +429,8 @@
     $('#hc-lh').oninput = custom; $('#hc-rh').oninput = custom;
     $$('[data-rw]', rail).forEach((b) => b.onclick = () => saveRewind(+b.dataset.rw));
     $('#app-sound').onchange = (e) => { ui.sound = e.target.checked; savePrefs(); };
+    if ($('#snd-out')) $('#snd-out').onchange = (e) => { ui.outName = e.target.value; savePrefs(); applyOutput(); renderRail(); const t = M.audio().currentTime + 0.05; [60, 64, 67].forEach((m, k) => M.tone(m, t + k * 0.15, 0.5)); };
+    if ($('#snd-echo')) $('#snd-echo').onchange = (e) => { ui.outEcho = e.target.checked; savePrefs(); applyOutput(); };
     if ($('#backup')) { $('#backup').onclick = backup; $('#restore').onchange = (e) => restore(e.target.files[0]); }
   }
   function heatmap(all) {
@@ -800,7 +803,8 @@
     const { key, text } = shownChart(n, b, semis);
     const parsed = TX.parseChart(text, b.beats || 4);
     let html = `<div class="sheet" data-sheet="${i}">
-      <div class="sh-title">${esc(b.label || n.title || 'Untitled')}</div>
+      <div class="sh-title" contenteditable="plaintext-only" spellcheck="false" data-shtitle="${i}" title="Click to rename this sheet">${esc(b.label || n.title || 'Untitled')}</div>
+      <div class="sh-sub" contenteditable="plaintext-only" spellcheck="false" data-shsub="${i}" data-ph="Add a subtitle — artist, arranger, notes for students…">${esc(b.subtitle || '')}</div>
       <div class="sh-meta">${metaLine(key, b)}</div>`;
     parsed.sections.forEach((s, si) => {
       if (s.name) html += `<div class="sh-sec">${esc(s.name)} :</div>`;
@@ -868,7 +872,8 @@
     const { key, notes, lh, chords } = shownMelody(n, b, semis);
     const opts = melodyOpts(b, key);
     let html = `<div class="sheet mel-sheet ${b.ear ? 'ear' : ''} ${b.colorHands === false ? '' : 'hands-colored'}" data-sheet="${i}">
-      <div class="sh-title">${esc(b.label || n.title || 'Melody')}</div>
+      <div class="sh-title" contenteditable="plaintext-only" spellcheck="false" data-shtitle="${i}" title="Click to rename this sheet">${esc(b.label || n.title || 'Melody')}</div>
+      <div class="sh-sub" contenteditable="plaintext-only" spellcheck="false" data-shsub="${i}" data-ph="Add a subtitle — artist, arranger, notes for students…">${esc(b.subtitle || '')}</div>
       <div class="sh-meta">${metaLine(key, b)}</div>
       <div class="sh-sec">Melody :</div>`;
     html += notes.length || lh.length ? melodyLinesHTML(notes, lh, chords, b, opts, key) : '<p class="sh-text">No notes yet — record the melody, type it with ✎ Edit melody (e.g. <b>| G | C CB A G |</b>), or draw it with 🎹 Edit in piano roll.</p>';
@@ -1143,13 +1148,28 @@
     const roll = b.roll || { bpm: recCfg().bpm, events: [], beats: recCfg().beats };
     window.RollEditor.open({
       title: (b.label || 'Take') + (roll.clicked ? '' : ' · free time (bar lines are a guide)'), events: roll.events, bpm: roll.bpm || 80, beats: roll.beats || 4, downbeat: roll.downbeat || 0, split: 60,
-      onSave: (ev) => { b.roll = { ...roll, events: ev.map((e) => ({ m: e.m, t: e.t, d: e.d, v: e.v, h: e.h })), edited: Date.now() }; if (!roll.events.length) b.roll.clicked = true; saveNote(n); toast('Take saved'); },
+      input: editorInput,
+      onSave: (ev) => {
+        b.roll = { ...roll, events: ev.map((e) => ({ m: e.m, t: e.t, d: e.d, v: e.v, h: e.h })), edited: Date.now() }; if (!roll.events.length) b.roll.clicked = true;
+        const k = refreshLinked(n, b);
+        saveNote(n); toast(k ? `Take saved — ${k} sheet${k > 1 ? 's' : ''} made from it updated` : 'Take saved');
+      },
       actions: [
-        { label: 'Save → chord chart', run: () => { const c = chartFields(b.roll, b.id); if (!c) return; const msg = `Chart written: ${c.bpm} bpm, ${sigLabel(c.beats)}, key ${c._detected}`; insertAfter(n, b, clean(Object.assign({ id: uid('b'), kind: 'chart', label: n.title || 'Chart' }, c))); toast(msg); } },
-        { label: 'Save → melody sheet', primary: true, run: () => { const m = melodyFields(b.roll, b.id); if (!m || !m.notes.length) { toast('No melody found'); return; } insertAfter(n, b, clean(Object.assign({ id: uid('b'), kind: 'melody', label: n.title || 'Melody' }, m))); toast(`Melody written: ${m.notes.length} notes`); } }
+        { label: 'Save → chord chart', run: () => { if (linked(n, b, 'chart').length) { scrollToBlock(linked(n, b, 'chart')[0]); return; } const c = chartFields(b.roll, b.id); if (!c) return; const msg = `Chart written: ${c.bpm} bpm, ${sigLabel(c.beats)}, key ${c._detected}`; insertAfter(n, b, clean(Object.assign({ id: uid('b'), kind: 'chart', label: n.title || 'Chart' }, c))); toast(msg); } },
+        { label: 'Save → melody sheet', primary: true, run: () => { if (linked(n, b, 'melody').length) { scrollToBlock(linked(n, b, 'melody')[0]); return; } const m = melodyFields(b.roll, b.id); if (!m || !m.notes.length) { toast('No melody found'); return; } insertAfter(n, b, clean(Object.assign({ id: uid('b'), kind: 'melody', label: n.title || 'Melody' }, m))); toast(`Melody written: ${m.notes.length} notes`); } }
       ]
     });
   }
+  // Sheets written from a take remember it (src.roll). When the take changes they are rewritten from it;
+  // titles, lyrics and display options stay as they were.
+  const linked = (n, take, kind) => n.blocks.filter((x) => x.kind === kind && x.src && x.src.roll === take.id);
+  function refreshLinked(n, take) {
+    let k = 0;
+    linked(n, take, 'chart').forEach((x) => { const c = chartFields(take.roll, take.id, { shift: x.src.shift || 0 }); if (!c) return; delete c._detected; delete c._chords; Object.assign(x, c, { editing: false }); k++; });
+    linked(n, take, 'melody').forEach((x) => { const m = melodyFields(take.roll, take.id, { shift: x.src.shift || 0 }); if (!m) return; delete m._detected; Object.assign(x, m, { editing: false, take: undefined }); k++; });
+    return k;
+  }
+  function scrollToBlock(blk) { renderEditor(); setTimeout(() => { const el = $('#blk-' + CSS.escape(blk.id)); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 80); toast('Updated the sheet made from this take'); }
   function editMelodyInRoll(n, b, i) {
     stopActivity();
     const all = (b.notes || []).map((x) => ({ ...x, h: 'R' })).concat((b.lh || []).map((x) => ({ ...x, h: 'L' })));
@@ -1157,12 +1177,13 @@
     const off = minT < 0 ? Math.ceil(-minT - 1e-6) : 0;
     const take = (ev) => ({ bpm: b.bpm || 80, beats: b.beats || 4, clicked: true, downbeat: off, events: ev.map((e) => ({ ...e, v: e.v || 90 })) });
     window.RollEditor.open({
-      title: (b.label || n.title || 'Melody') + ' — both hands', events: all.map((x) => ({ m: x.m, t: x.t + off, d: x.d, h: x.h, v: 90 })), bpm: b.bpm || 80, beats: b.beats || 4, downbeat: off, split: 60,
+      title: (b.label || n.title || 'Melody') + ' — both hands', input: editorInput, events: all.map((x) => ({ m: x.m, t: x.t + off, d: x.d, h: x.h, v: 90 })), bpm: b.bpm || 80, beats: b.beats || 4, downbeat: off, split: 60,
       onSave: (ev) => {
         b.notes = ev.filter((e) => e.h !== 'L').map((e) => ({ m: e.m, t: +(e.t - off).toFixed(3), d: e.d }));
         b.lh = ev.filter((e) => e.h === 'L').map((e) => ({ m: e.m, t: +(e.t - off).toFixed(3), d: e.d }));
         const fine = ev.some((e) => Math.abs(e.t * 2 - Math.round(e.t * 2)) > 1e-3 || Math.abs(e.d * 2 - Math.round(e.d * 2)) > 1e-3);
         b.q = fine ? 0.25 : Math.min(b.q || 0.5, 0.5); b.text = null; b.editing = false;
+        if (b.lh.length) { const r = TX.transcribeMelody(take(ev)); if (r && r.chordBars) b.chordBars = r.chordBars; } // chord names follow the edited notes
         saveNote(n); toast('Melody saved');
       },
       actions: [{ label: 'Save + write chord chart', run: (ev) => { const c = chartFields(take(ev), null); if (!c) return; insertAfter(n, b, clean(Object.assign({ id: uid('b'), kind: 'chart', label: b.label || n.title || 'Chart' }, c))); toast('Chord chart written from the melody'); } }]
@@ -1398,6 +1419,15 @@
     });
     const B = (i) => n.blocks[+i];
     $$('[data-label]').forEach((inp) => inp.oninput = () => { B(inp.dataset.label).label = inp.value; markDirty(); });
+    $$('[data-shtitle],[data-shsub]').forEach((el) => {
+      el.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); el.blur(); } };
+      el.oninput = () => {
+        const txt = el.textContent.replace(/\s+/g, ' ').trim();
+        if (el.dataset.shtitle != null) { const blk = B(el.dataset.shtitle); blk.label = txt; const inp = $(`[data-label="${el.dataset.shtitle}"]`); if (inp) inp.value = txt; }
+        else B(el.dataset.shsub).subtitle = txt;
+        markDirty();
+      };
+    });
     $$('[data-up]').forEach((x) => x.onclick = () => { const i = +x.dataset.up; if (i > 0) { [n.blocks[i - 1], n.blocks[i]] = [n.blocks[i], n.blocks[i - 1]]; markDirty(true); } });
     $$('[data-down]').forEach((x) => x.onclick = () => { const i = +x.dataset.down; if (i < n.blocks.length - 1) { [n.blocks[i + 1], n.blocks[i]] = [n.blocks[i], n.blocks[i + 1]]; markDirty(true); } });
     $$('[data-bdel]').forEach((x) => x.onclick = () => {
@@ -1509,6 +1539,11 @@
   }
 
   /* ---------- live input for piano-roll takes ---------- */
+  const editorTaps = new Set(); // the piano-roll editor listens here while it records
+  const editorInput = {
+    listen: (h) => { editorTaps.add(h); return () => editorTaps.delete(h); },
+    ensure: () => { ensureInput(); if (!midiState.connected && navigator.requestMIDIAccess && !embedded) connectMidi(); }
+  };
   const liveFlat = () => keyFlat((current && (ui.viewKey || current.key)) || 'C');
   function showLive() {
     const name = U.liveName(new Set([...live.held, ...live.sustained]), liveFlat());
@@ -1517,8 +1552,9 @@
     const top = $('#live-top'); if (top) { top.textContent = name ? '🎹 ' + name : ''; top.hidden = !name; }
   }
   function liveOn(m, v) {
-    if (ui.sound !== false) M.tone(m, 0, 1.0, { vel: 0.08 + v / 700 });
+    if (ui.sound !== false) M.tone(m, 0, 1.0, { vel: 0.08 + v / 700, v, monitor: true });
     if (rollRec.rec) rollRec.rec.noteOn(m, v);
+    editorTaps.forEach((t) => t.on(m, v));
     rwOn(m, v);
     live.held.add(m); live.sustained.delete(m); live.grabbed.add(m);
     if (drill.on) drill.check();
@@ -1528,6 +1564,7 @@
   }
   function liveOff(m) {
     if (rollRec.rec) rollRec.rec.noteOff(m);
+    editorTaps.forEach((t) => t.off(m));
     rwOff(m);
     live.held.delete(m);
     if (live.pedal) live.sustained.add(m);
@@ -1541,6 +1578,7 @@
   }
   function livePedal(down) {
     live.pedal = down;
+    editorTaps.forEach((t) => t.pedal(down));
     rwPedal(down);
     if (rollRec.rec) rollRec.rec.pedal(down);
     if (!down) live.sustained.clear();
@@ -1561,15 +1599,27 @@
     markDirty(true);
   }
   function ensureInput() {
-    if (!rollRec.input) rollRec.input = U.noteInput({ on: liveOn, off: liveOff, pedal: livePedal, octave: (o) => toast('Octave ' + o), midiChange: (names) => { midiState.connected = names.length > 0; renderRail(); } }, { enabled: () => !!rollRec.block || !!grab.block || finder.on || drill.on || follow.on });
+    if (!rollRec.input) rollRec.input = U.noteInput({ on: liveOn, off: liveOff, pedal: livePedal, octave: (o) => toast('Octave ' + o), midiChange: (names) => { midiState.connected = names.length > 0; applyOutput(); renderRail(); } }, { enabled: () => !!rollRec.block || !!grab.block || finder.on || drill.on || follow.on || editorTaps.size > 0 });
   }
   let silentMidi = false;
+  const midiOutputs = () => (rollRec.input && rollRec.input.outputs ? rollRec.input.outputs() : []);
+  function applyOutput() {
+    const port = ui.outName ? midiOutputs().find((o) => o.name === ui.outName) : null;
+    M.setOutput(port || null, { echo: !!ui.outEcho });
+  }
+  function soundOutHTML() {
+    const outs = midiOutputs();
+    return `<div class="snd-out small"><label class="row" style="gap:6px">Sound <select id="snd-out" aria-label="Where playback is heard">
+      <option value="">Built-in synth</option>${outs.map((o) => `<option ${ui.outName === o.name ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}</select></label>
+      ${ui.outName ? `<label class="row" style="gap:6px"><input type="checkbox" id="snd-echo" ${ui.outEcho ? 'checked' : ''} style="width:15px;height:15px"> Also send what I play live</label>` : ''}
+      <div class="muted">${outs.length ? 'Pick a port to play your VSTs: playback, chords and sheets are sent there as MIDI.' : 'No MIDI outputs.'} On a Mac, turn on the IAC Driver in Audio MIDI Setup, choose it here, and arm a VST track in your DAW.</div></div>`;
+  }
   async function connectMidi() {
     ensureInput();
     const r = await rollRec.input.connectMidi();
     midiState.connected = r.ok && !/No MIDI/.test(r.message);
     midiState.message = r.message;
-    if (midiState.connected) { ui.midiAuto = true; savePrefs(); }
+    if (r.ok) { ui.midiAuto = true; savePrefs(); applyOutput(); }
     if (!silentMidi) toast(r.message);
     renderRail();
     return r;
@@ -1972,7 +2022,7 @@
     if (current && !Store.get(current.id)) { current = null; renderEditor(); }
   }
   document.addEventListener('keydown', (e) => {
-    if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName) || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName) || e.target.isContentEditable || e.metaKey || e.ctrlKey || e.altKey) return;
     if (rollRec.block || drill.on || finder.on || follow.on) return;
     if (e.key === 'n') { e.preventDefault(); openTemplates(); }
     if (e.key === '/') { e.preventDefault(); $('#q') && $('#q').focus(); }
@@ -1989,7 +2039,7 @@
   Store.on((remote) => {
     const sel = (ui.selected && Store.get(ui.selected)) || null;
     const pane = $('#note-pane');
-    const typing = pane.contains(document.activeElement) && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
+    const typing = pane.contains(document.activeElement) && (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) || document.activeElement.isContentEditable);
     if (sel !== current) { current = sel; renderEditor(); }
     else if (remote && current && !current._dirty && !typing && !rollRec.block && !micRec.mr) renderEditor();
     if (!$('#rail').contains(document.activeElement) || document.activeElement.tagName !== 'INPUT') renderRail();
@@ -1997,7 +2047,7 @@
     if (!document.body.classList.contains('note-open') && !($('#list-pane').contains(a) && /INPUT|TEXTAREA|SELECT/.test(a.tagName))) renderList();
   });
   Store.init();
-  if (ui.midiAuto && !embedded && navigator.requestMIDIAccess) { silentMidi = true; connectMidi().catch(() => {}).then(() => { silentMidi = false; }); }
+  if (ui.midiAuto !== false && !embedded && navigator.requestMIDIAccess) { silentMidi = true; connectMidi().catch(() => {}).then(() => { silentMidi = false; }); }
   if (!embedded && 'serviceWorker' in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(() => {});
   window.Riffbook = { exampleNotes, DEFAULT_TOPICS };
 })();

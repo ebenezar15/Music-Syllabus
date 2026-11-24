@@ -6,7 +6,7 @@
   const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
   const esc = U.esc;
   const WHITE = [0, 2, 4, 5, 7, 9, 11];
-  const ROW = 14, GUT = 46;
+  const ROW = 14, GUT = 46, RUL = 18; // RUL: the ruler strip on top where the marker is set
 
   function open(cfg) {
     const ov = document.getElementById('roll-editor') || Object.assign(document.createElement('div'), { id: 'roll-editor', className: 'overlay roll-ed-ov' });
@@ -15,7 +15,7 @@
     const st = {
       notes: (cfg.events || []).map((e, k) => ({ id: k + 1, m: e.m, t: e.t, d: e.d, v: e.v || 90, h: e.h || (e.m < split ? 'L' : 'R') })),
       nextId: (cfg.events || []).length + 1, sel: new Set(), tool: 'select', snap: 0.25, len: 1, hand: 'auto',
-      ppb: 56, undo: [], redo: [], dirty: false, speed: 1, loop: false, click: false, playing: null, playStart: 0
+      ppb: 56, undo: [], redo: [], dirty: false, speed: 1, loop: false, click: false, playing: null, playStart: 0, cursor: 0, recMode: 'replace'
     };
     const bpm = cfg.bpm || 80, beats = cfg.beats || 4, downbeat = cfg.downbeat || 0;
     const snapT = (t) => (st.snap ? Math.round(t / st.snap) * st.snap : t);
@@ -54,20 +54,24 @@
         <button class="btn sm ghost" id="re-zo" title="Zoom out">−</button><button class="btn sm ghost" id="re-zi" title="Zoom in">+</button>
       </div>
       <div class="re-tools row small">
-        <button class="btn sm primary" id="re-play" title="Play from the start — Space">▶ Play</button>
+        <button class="btn sm ghost" id="re-home" title="Marker back to the start — Home">⏮</button>
+        <button class="btn sm primary" id="re-play" title="Play from the marker — Space. Click the ruler (or an empty spot) to move the marker">▶ Play</button>
+        ${cfg.input ? `<button class="btn sm rec-btn" id="re-rec" title="Record from the marker with a one-bar lead-in — R">● Record</button>
+        <select id="re-recmode" aria-label="Recording mode" title="Retake replaces what you play over (only the chosen hand if Hand is set); Add keeps the old notes"><option value="replace">Retake (replace)</option><option value="add">Add (overdub)</option></select>` : ''}
+        <span class="small muted" id="re-pos"></span>
         <label>Speed <select id="re-speed"><option value="0.5">50%</option><option value="0.75">75%</option><option value="1" selected>100%</option></select></label>
         <label><input type="checkbox" id="re-loop"> Loop</label><label><input type="checkbox" id="re-click"> Click</label>
         <span class="muted" id="re-info"></span>
       </div>
       <div class="re-canvas" id="re-canvas" tabindex="0" aria-label="Piano roll — notes can be edited with the mouse and keyboard"></div>
-      <div class="small muted re-help">Drag notes to move them, drag a note's right edge to change its length, drag on empty space to select several. Keys: Delete removes, ↑↓ moves by a semitone (Shift = octave), ←→ moves by the snap, Ctrl/Cmd+A selects all, Space plays. ${downbeat ? 'The grey area before bar 1 is the pickup.' : ''}</div>
+      <div class="small muted re-help">Click the ruler or an empty spot to move the ▼ marker — Play and Record start there. Drag notes to move them, drag a note's right edge to change its length, drag on empty space to select several. Keys: Delete removes, ↑↓ moves by a semitone (Shift = octave), ←→ moves by the snap, Ctrl/Cmd+A selects all, Space plays. ${downbeat ? 'The grey area before bar 1 is the pickup.' : ''}</div>
     </div>`;
     ov.hidden = false;
     const canvas = $('#re-canvas', ov);
 
     function draw() {
       const { lo, hi } = range(), L = lengthBeats(), W = GUT + L * st.ppb, H = (hi - lo + 1) * ROW;
-      let g = '';
+      let g = '', ruler = `<rect class="re-ruler" x="${GUT}" y="0" width="${L * st.ppb}" height="${RUL}" fill="var(--surface-2)"/>`;
       for (let m = lo; m <= hi; m++) {
         const y = (hi - m) * ROW, black = !WHITE.includes(m % 12);
         g += `<rect x="${GUT}" y="${y}" width="${L * st.ppb}" height="${ROW}" fill="${black ? 'var(--surface-2)' : 'var(--surface)'}"/>`;
@@ -80,21 +84,35 @@
       for (let x = 0; x <= L + 1e-6; x += sub) {
         const beat = x - downbeat, isBar = Math.abs(beat / beats - Math.round(beat / beats)) < 1e-6, isBeat = Math.abs(x - Math.round(x)) < 1e-6;
         g += `<line x1="${GUT + x * st.ppb}" x2="${GUT + x * st.ppb}" y1="0" y2="${H}" stroke="var(--line)" stroke-width="${isBar ? 1.6 : isBeat ? 0.8 : 0.35}" opacity="${isBar || isBeat ? 1 : 0.7}"/>`;
-        if (isBar && beat >= 0) g += `<text x="${GUT + x * st.ppb + 3}" y="10" font-size="10" fill="var(--muted)" pointer-events="none">${Math.round(beat / beats) + 1}</text>`;
+        if (isBar && beat >= 0) ruler += `<text x="${GUT + x * st.ppb + 3}" y="13" font-size="10" fill="var(--muted)" pointer-events="none">${Math.round(beat / beats) + 1}</text>`;
+        if (isBeat) ruler += `<line x1="${GUT + x * st.ppb}" x2="${GUT + x * st.ppb}" y1="${isBar ? 0 : RUL - 5}" y2="${RUL}" stroke="var(--line)" pointer-events="none"/>`;
       }
+      (rec ? rec.out : []).forEach((n) => { g += `<rect x="${GUT + n.t * st.ppb}" y="${(hi - n.m) * ROW + 1}" width="${Math.max(4, n.d * st.ppb - 1)}" height="${ROW - 2}" rx="3" fill="var(--accent-2)" opacity=".75"/>`; });
       st.notes.forEach((n) => {
         const x = GUT + n.t * st.ppb, y = (hi - n.m) * ROW, w = Math.max(4, n.d * st.ppb - 1), sel = st.sel.has(n.id);
         g += `<g class="re-note ${sel ? 'sel' : ''}" data-id="${n.id}"><rect x="${x + 0.5}" y="${y + 1}" width="${w}" height="${ROW - 2}" rx="3" fill="${n.h === 'L' ? 'var(--lh, var(--s))' : 'var(--rh, var(--accent))'}" stroke="${sel ? 'var(--text)' : 'rgba(0,0,0,.25)'}" stroke-width="${sel ? 2 : 1}"/>${w > 26 ? `<text x="${x + 4}" y="${y + ROW - 4}" font-size="9" fill="#fff" pointer-events="none">${esc(label(n.m))}</text>` : ''}<rect class="re-edge" x="${x + w - 5}" y="${y + 1}" width="6" height="${ROW - 2}" fill="transparent"/></g>`;
       });
-      g += `<line id="re-ph" x1="${GUT}" x2="${GUT}" y1="0" y2="${H}" stroke="var(--accent-2)" stroke-width="2" opacity="0"/><rect id="re-marq" fill="var(--accent)" opacity=".12" stroke="var(--accent)" width="0" height="0"/>`;
+      g += `<rect id="re-marq" fill="var(--accent)" opacity=".12" stroke="var(--accent)" width="0" height="0"/>`;
+      const cx = GUT + st.cursor * st.ppb;
+      const top = `<g id="re-cur" transform="translate(${cx},0)" pointer-events="none"><path d="M-6 0 L6 0 L0 9 Z" fill="var(--accent)"/><line x1="0" x2="0" y1="0" y2="${H + RUL}" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="5 4"/></g>
+        <line id="re-ph" x1="${GUT}" x2="${GUT}" y1="0" y2="${H + RUL}" stroke="var(--accent-2)" stroke-width="2" opacity="0" pointer-events="none"/>`;
       const keepX = canvas.scrollLeft, keepY = canvas.scrollTop;
-      canvas.innerHTML = `<svg class="re-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${g}</svg>`;
+      canvas.innerHTML = `<svg class="re-svg" width="${W}" height="${H + RUL}" viewBox="0 0 ${W} ${H + RUL}">${ruler}<g transform="translate(0,${RUL})">${g}</g>${top}</svg>`;
+      showPos();
       canvas.scrollLeft = keepX; canvas.scrollTop = keepY;
       $$('[data-tool]', ov).forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tool === st.tool)));
       canvas.dataset.tool = st.tool;
       const nR = st.notes.filter((n) => n.h === 'R').length;
       $('#re-info', ov).textContent = `${st.notes.length} notes (${nR} right hand, ${st.notes.length - nR} left) · ${bpm} bpm · ${beats === 6 || beats === 12 ? beats + '/8' : beats + '/4'}${st.sel.size ? ` · ${st.sel.size} selected` : ''}`;
       $('#re-undo', ov).disabled = !st.undo.length; $('#re-redo', ov).disabled = !st.redo.length;
+    }
+    const barBeat = (t) => { const b = t - downbeat, bar = Math.floor(b / beats + 1e-6); return `bar ${bar + 1}, beat ${+(b - bar * beats + 1).toFixed(2)}`; };
+    function showPos() { const el = $('#re-pos', ov); if (el) el.textContent = `▼ ${barBeat(st.cursor)}`; }
+    function setCursor(t, keepPlaying = true) {
+      st.cursor = Math.max(0, +snapFloor(t).toFixed(4));
+      const c = $('#re-cur', canvas); if (c) c.setAttribute('transform', `translate(${GUT + st.cursor * st.ppb},0)`);
+      showPos();
+      if (keepPlaying && st.playing) { stop(); play(); }
     }
     function scrollToNotes() {
       const { hi } = range();
@@ -104,7 +122,7 @@
     }
 
     // ---------- pointer editing ----------
-    const pos = (ev) => { const r = canvas.querySelector('svg').getBoundingClientRect(); const { hi } = range(); const x = ev.clientX - r.left, y = ev.clientY - r.top; return { x, y, t: (x - GUT) / st.ppb, m: hi - Math.floor(y / ROW) }; };
+    const pos = (ev) => { const r = canvas.querySelector('svg').getBoundingClientRect(); const { hi } = range(); const x = ev.clientX - r.left, y = ev.clientY - r.top - RUL; return { x, y, t: (x - GUT) / st.ppb, m: hi - Math.floor(y / ROW) }; };
     let drag = null;
     canvas.addEventListener('pointerdown', (ev) => {
       if (ev.button !== 0) return;
@@ -113,6 +131,8 @@
       if (keyEl) { M.tone(+keyEl.dataset.key, 0, 0.7); return; }
       const p = pos(ev);
       if (p.x < GUT) return;
+      if (p.y < 0) { setCursor(p.t); drag = { mode: 'cursor' }; canvas.setPointerCapture(ev.pointerId); return; }
+      if (rec) return; // no editing while recording
       const g = ev.target.closest('.re-note');
       const note = g && st.notes.find((n) => n.id === +g.dataset.id);
       if (st.tool === 'erase') { if (note) { push(); st.notes = st.notes.filter((n) => n !== note); st.sel.delete(note.id); draw(); } drag = { erase: true }; canvas.setPointerCapture(ev.pointerId); return; }
@@ -139,6 +159,7 @@
     canvas.addEventListener('pointermove', (ev) => {
       if (!drag) return;
       const p = pos(ev);
+      if (drag.mode === 'cursor') { setCursor(p.t, false); return; }
       if (drag.erase) { const g = document.elementFromPoint(ev.clientX, ev.clientY); const el = g && g.closest && g.closest('.re-note'); if (el) { const id = +el.dataset.id; st.notes = st.notes.filter((n) => n.id !== id); draw(); } return; }
       if (drag.mode === 'marquee') {
         const x0 = Math.min(drag.start.x, p.x), y0 = Math.min(drag.start.y, p.y), w = Math.abs(p.x - drag.start.x), h = Math.abs(p.y - drag.start.y);
@@ -157,7 +178,9 @@
       });
       draw();
     });
-    const endDrag = () => {
+    const endDrag = (ev) => {
+      if (drag && drag.mode === 'cursor') { drag = null; if (st.playing) { stop(); play(); } return; }
+      if (drag && drag.mode === 'marquee' && ev && ev.clientX != null) { const p = pos(ev); if (Math.abs(p.x - drag.start.x) < 4 && Math.abs(p.y - drag.start.y) < 4) setCursor(p.t); }
       if (drag && drag.mode === 'move' && drag.pushed) { const moved = st.notes.find((n) => st.sel.has(n.id)); if (moved) M.tone(moved.m, 0, 0.4, { vel: 0.15 }); }
       drag = null; st.frozen = null; draw();
     };
@@ -203,8 +226,9 @@
       if (st.playing) { stop(); return; }
       if (!st.notes.length) return;
       const c = M.audio(), spb = 60 / bpm / st.speed, t0 = c.currentTime + 0.1;
-      const from = st.sel.size ? Math.min(...selected().map((n) => n.t)) : 0;
+      const from = st.cursor;
       const end = Math.max(...st.notes.map((n) => n.t + n.d));
+      if (from >= end) { setCursor(0, false); return play(); }
       st.notes.filter((n) => n.t + n.d > from).forEach((n) => M.tone(n.m, t0 + Math.max(0, n.t - from) * spb, Math.max(0.08, (n.t + n.d - Math.max(n.t, from)) * spb * 0.97), { vel: 0.1 + (n.v || 90) / 700 }));
       if (st.click) for (let b = Math.ceil(from); b < end; b++) M.click(t0 + (b - from) * spb, U.accentOf(M.mod(b - downbeat, beats), beats));
       st.playing = { t0, from, spb, end };
@@ -221,13 +245,83 @@
       };
       tick();
     }
-    $('#re-play', ov).onclick = play;
+    $('#re-play', ov).onclick = () => (rec ? recStop() : play());
+    $('#re-home', ov).onclick = () => { setCursor(0); canvas.scrollLeft = 0; };
+
+    // ---------- recording / retakes from the marker ----------
+    let rec = null;
+    function recStart() {
+      if (rec) return recStop();
+      if (st.playing) stop();
+      cfg.input.ensure && cfg.input.ensure();
+      const c = M.audio(); if (!c) return;
+      const spb = 60 / bpm / st.speed, pre = beats, from = st.cursor, startBeat = from - pre;
+      const t0 = c.currentTime + 0.12, tm = t0 + pre * spb;
+      // lead-in: one bar of clicks, and you hear what comes before the marker (and after it when adding)
+      for (let k = 0; k < pre; k++) M.click(t0 + k * spb, U.accentOf(M.mod(Math.round(startBeat + k - downbeat), beats), beats));
+      st.notes.filter((n) => n.t + n.d > startBeat && (st.recMode === 'add' || n.t < from)).forEach((n) => {
+        const s0 = Math.max(n.t, startBeat), e0 = st.recMode === 'add' ? n.t + n.d : Math.min(n.t + n.d, from);
+        if (e0 > s0) M.tone(n.m, t0 + (s0 - startBeat) * spb, Math.max(0.06, (e0 - s0) * spb * 0.97), { vel: 0.08 + (n.v || 90) / 900 });
+      });
+      if (st.click) for (let b = Math.ceil(from); b < from + 400; b++) M.click(tm + (b - from) * spb, U.accentOf(M.mod(b - downbeat, beats), beats));
+      const beatAt = () => from + (M.audio().currentTime - tm) / spb;
+      rec = { from, tm, spb, out: [], active: new Map(), pedal: false, held: new Set(), beatAt };
+      const end = (m) => { const a = rec.active.get(m); if (!a) return; rec.active.delete(m); rec.held.delete(m); rec.out.push({ m, t: +Math.max(0, a.t).toFixed(4), d: +Math.max(0.05, beatAt() - a.t).toFixed(4), v: a.v }); draw(); };
+      rec.end = end;
+      rec.unlisten = cfg.input.listen({
+        on: (m, v) => { if (!rec) return; if (rec.active.has(m)) end(m); rec.active.set(m, { t: beatAt(), v: v || 90 }); },
+        off: (m) => { if (!rec || !rec.active.has(m)) return; if (rec.pedal) rec.held.add(m); else end(m); },
+        pedal: (d) => { if (!rec) return; rec.pedal = d; if (!d) Array.from(rec.held).forEach(end); }
+      });
+      const b = $('#re-rec', ov); b.textContent = '■ Stop recording'; b.classList.add('on');
+      $('#re-play', ov).textContent = '■ Stop';
+      const ph = $('#re-ph', canvas); if (ph) ph.setAttribute('opacity', '1');
+      const tick = () => {
+        if (!rec) return;
+        const beat = startBeat + (M.audio().currentTime - t0) / spb, x = GUT + Math.max(0, beat) * st.ppb, p2 = $('#re-ph', canvas);
+        if (p2) { p2.setAttribute('x1', x); p2.setAttribute('x2', x); p2.setAttribute('stroke', beat < from ? 'var(--muted)' : 'var(--rec, #e5484d)'); p2.setAttribute('opacity', '1'); }
+        if (x > canvas.scrollLeft + canvas.clientWidth - 60) canvas.scrollLeft = x - 80;
+        raf = requestAnimationFrame(tick);
+      };
+      tick();
+      toastLocal(`Recording from ${barBeat(from)} after one bar — ${st.recMode === 'add' ? 'adding to' : 'replacing'} ${st.hand === 'auto' ? 'the notes' : st.hand === 'R' ? 'the right hand' : 'the left hand'}`);
+    }
+    function recStop() {
+      if (!rec) return;
+      const r = rec;
+      Array.from(r.active.keys()).forEach(r.end);
+      const stopBeat = Math.max(r.beatAt(), ...r.out.map((n) => n.t + n.d));
+      r.unlisten && r.unlisten();
+      rec = null;
+      stop();
+      const b = $('#re-rec', ov); if (b) { b.textContent = '● Record'; b.classList.remove('on'); }
+      const kept = r.out.filter((n) => n.t + n.d > r.from - 0.5); // ignore warm-up notes long before the marker
+      if (!kept.length) { draw(); toastLocal('Nothing recorded'); return; }
+      push();
+      const handOf = (m) => (st.hand === 'auto' ? (m < split ? 'L' : 'R') : st.hand);
+      if (st.recMode === 'replace') {
+        const lo = Math.min(r.from, ...kept.map((n) => n.t));
+        st.notes = st.notes.filter((n) => !(n.t >= lo - 1e-6 && n.t < stopBeat && (st.hand === 'auto' || n.h === st.hand)));
+      }
+      const added = kept.map((n) => ({ id: st.nextId++, m: n.m, t: n.t, d: n.d, v: n.v, h: handOf(n.m) }));
+      st.notes.push(...added);
+      st.sel = new Set(added.map((n) => n.id));
+      draw();
+      toastLocal(`${added.length} notes recorded — they are selected (Q quantises them, Ctrl/Cmd+Z undoes the take)`);
+    }
+    if (cfg.input) {
+      $('#re-rec', ov).onclick = recStart;
+      $('#re-recmode', ov).onchange = (e) => { st.recMode = e.target.value; };
+    }
 
     // ---------- keyboard ----------
     const onKey = (ev) => {
       if (ov.hidden) return;
       if (/INPUT|SELECT|TEXTAREA/.test(ev.target.tagName)) return;
       const k = ev.key, mod = ev.metaKey || ev.ctrlKey;
+      if (rec) { if (k === ' ' || k === 'Escape' || k.toLowerCase() === 'r') { ev.preventDefault(); ev.stopPropagation(); recStop(); } return; } // other keys may be notes on the computer keyboard
+      if (k === 'Home' || k === 'Enter') { ev.preventDefault(); setCursor(0); canvas.scrollLeft = 0; return; }
+      if (k.toLowerCase() === 'r' && !mod && cfg.input) { ev.preventDefault(); recStart(); return; }
       if (mod && k.toLowerCase() === 'z') { ev.preventDefault(); ev.shiftKey ? cmd.redo() : cmd.undo(); return; }
       if (mod && k.toLowerCase() === 'y') { ev.preventDefault(); cmd.redo(); return; }
       if (mod && k.toLowerCase() === 'a') { ev.preventDefault(); st.sel = new Set(st.notes.map((n) => n.id)); draw(); return; }
@@ -248,15 +342,15 @@
 
     // ---------- save / cancel ----------
     const result = () => st.notes.slice().sort((a, b) => a.t - b.t || a.m - b.m).map((n) => ({ m: n.m, t: +n.t.toFixed(3), d: +n.d.toFixed(3), v: n.v, h: n.h }));
-    function close() { stop(); document.removeEventListener('keydown', onKey, true); ov.hidden = true; ov.innerHTML = ''; if (cfg.onClose) cfg.onClose(); }
+    function close() { recStop(); stop(); document.removeEventListener('keydown', onKey, true); ov.hidden = true; ov.innerHTML = ''; if (cfg.onClose) cfg.onClose(); }
     let armedCancel = false;
     function cancel() {
       if (st.dirty && !armedCancel) { armedCancel = true; const b = $('#re-cancel', ov); b.textContent = 'Discard changes?'; setTimeout(() => { armedCancel = false; if (b.isConnected) b.textContent = 'Cancel'; }, 2500); return; }
       close();
     }
     $('#re-cancel', ov).onclick = cancel;
-    $('#re-save', ov).onclick = () => { const ev = result(); close(); cfg.onSave && cfg.onSave(ev); };
-    $$('[data-act]', ov).forEach((b) => b.onclick = () => { const ev = result(); const a = cfg.actions[+b.dataset.act]; close(); cfg.onSave && cfg.onSave(ev); a.run(ev); });
+    $('#re-save', ov).onclick = () => { recStop(); const ev = result(); close(); cfg.onSave && cfg.onSave(ev); };
+    $$('[data-act]', ov).forEach((b) => b.onclick = () => { recStop(); const ev = result(); const a = cfg.actions[+b.dataset.act]; close(); cfg.onSave && cfg.onSave(ev); a.run(ev); });
 
     draw(); scrollToNotes();
     if (!st.notes.length) { st.tool = 'draw'; draw(); }

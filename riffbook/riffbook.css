@@ -385,3 +385,17 @@ body.note-open .rb-list { display: none; }
 .re-edge { cursor: ew-resize; }
 .re-key { cursor: pointer; }
 .re-help { padding-bottom: 4px; }
+
+/* editable sheet title / subtitle */
+.sh-title[contenteditable], .sh-sub[contenteditable] { outline: none; border-radius: 6px; cursor: text; }
+.sh-title[contenteditable]:hover, .sh-sub[contenteditable]:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.sh-title[contenteditable]:focus, .sh-sub[contenteditable]:focus { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
+.sh-sub { text-align: center; font-size: .95rem; color: var(--muted); padding-right: 8%; min-height: 1.2em; }
+.sh-sub:empty::before { content: attr(data-ph); opacity: .45; }
+@media print { .sh-sub:empty { display: none; } }
+/* sound output */
+.snd-out { display: grid; gap: 4px; margin-top: 8px; }
+.snd-out select { max-width: 100%; }
+/* piano-roll marker + recording */
+.re-ruler { cursor: col-resize; }
+#re-rec.on { background: var(--rec, #e5484d); color: #fff; border-color: transparent; }

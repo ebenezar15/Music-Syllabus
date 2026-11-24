@@ -169,6 +169,7 @@
           const hook = () => {
             midi.inputs.forEach((inp) => {
               inp.onmidimessage = (msg) => {
+                if (M.outputName && M.outputName() && inp.name === M.outputName()) return; // our own output coming back (e.g. IAC bus)
                 const [st, note, vel] = msg.data; const cmd = st & 0xf0;
                 if (cmd === 0x90 && vel > 0) handlers.on(note, vel);
                 else if (cmd === 0x80 || (cmd === 0x90 && vel === 0)) handlers.off(note);
@@ -182,6 +183,7 @@
           return { ok: true, message: names.length ? 'Connected: ' + names.join(', ') : 'No MIDI keyboard found. Plug one in and it connects automatically.' };
         } catch (e) { return { ok: false, message: 'MIDI access is blocked here. Use the computer keys or the on-screen keyboard.' }; }
       },
+      outputs() { return midi && midi.outputs ? Array.from(midi.outputs.values()) : []; },
       destroy() {
         document.removeEventListener('keydown', kd); document.removeEventListener('keyup', ku);
         if (midi) midi.inputs.forEach((i) => { i.onmidimessage = null; });

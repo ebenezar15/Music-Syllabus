@@ -1,5 +1,5 @@
 // Riffbook for Mac — a thin desktop shell around the web app, with MIDI and microphone allowed.
-const { app, BrowserWindow, session, shell, Menu } = require('electron');
+const { app, BrowserWindow, session, shell, Menu, systemPreferences } = require('electron');
 const path = require('path');
 
 const ALLOWED = new Set(['midi', 'midiSysex', 'media', 'audioCapture', 'clipboard-sanitized-write']);
@@ -17,6 +17,8 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // Ask macOS for the microphone once, at first launch; after that the answer is remembered
+  if (process.platform === 'darwin' && systemPreferences.askForMediaAccess && systemPreferences.getMediaAccessStatus('microphone') === 'not-determined') systemPreferences.askForMediaAccess('microphone').catch(() => {});
   session.defaultSession.setPermissionRequestHandler((wc, permission, cb) => cb(ALLOWED.has(permission)));
   session.defaultSession.setPermissionCheckHandler((wc, permission) => ALLOWED.has(permission));
   Menu.setApplicationMenu(Menu.buildFromTemplate([

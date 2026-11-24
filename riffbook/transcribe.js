@@ -165,8 +165,9 @@
   // Skyline: the highest right-hand line, ignoring inner chord tones under a held melody note
   function melodyLine(events, opts = {}) {
     const split = opts.split || 60;
-    const rh = events.filter((e) => e.m >= split);
-    const pool = (rh.length >= 3 ? rh : events).slice().sort((a, b) => a.t - b.t || b.m - a.m);
+    const hands = events.some((e) => e.h); // hands chosen in the piano-roll editor win over the split point
+    const rh = events.filter((e) => (e.h ? e.h !== 'L' : e.m >= split));
+    const pool = (hands || rh.length >= 3 ? rh : events).slice().sort((a, b) => a.t - b.t || b.m - a.m);
     const groups = [];
     pool.forEach((e) => { const g = groups[groups.length - 1]; if (g && e.t - g.t < 0.12) g.notes.push(e); else groups.push({ t: e.t, notes: [e] }); });
     const line = [];
@@ -184,7 +185,7 @@
   function lhLine(events, melody, opts = {}) {
     const split = opts.split || 60, q = opts.q || 0.5;
     const mel = new Set(melody.map((x) => x.src).filter(Boolean));
-    const lh = events.filter((e) => e.m < split && !mel.has(e)).sort((a, b) => a.t - b.t);
+    const lh = events.filter((e) => (e.h ? e.h === 'L' : e.m < split) && !mel.has(e)).sort((a, b) => a.t - b.t);
     const groups = [];
     lh.forEach((e) => { const g = groups[groups.length - 1]; if (g && e.t - g.t < 0.12) g.list.push(e); else groups.push({ t: e.t, list: [e] }); });
     const out = [];

@@ -216,9 +216,52 @@
   }
   const freq = (midi) => 440 * Math.pow(2, (midi - 69) / 12);
 
+  /* MIDI output: play through a VST / DAW / hardware synth instead of the built-in sound.
+     Messages are queued and sent shortly before they are due, so Stop can cancel what has not been sent yet. */
+  let out = null, outCh = 0, echo = false, outQ = [], outTimer = null;
+  const sounding = new Set();
+  function flushOut() {
+    const now = performance.now(), due = [];
+    outQ = outQ.filter((x) => { if (x.ms <= now + 80) { due.push(x); return false; } return true; });
+    due.forEach((x) => {
+      try {
+        if (!out) return;
+        out.send(x.data, Math.max(now, x.ms));
+        const k = x.data[1];
+        if ((x.data[0] & 0xf0) === 0x90) sounding.add(k); else sounding.delete(k);
+      } catch (e) { /* port went away */ }
+    });
+    if (!outQ.length && outTimer) { clearInterval(outTimer); outTimer = null; }
+  }
+  function qSend(ms, data) { outQ.push({ ms, data }); if (!outTimer) outTimer = setInterval(flushOut, 25); flushOut(); }
+  function panic() {
+    outQ = [];
+    if (!out) return;
+    try {
+      sounding.forEach((m) => out.send([0x80 | outCh, m, 0]));
+      out.send([0xB0 | outCh, 64, 0]); out.send([0xB0 | outCh, 123, 0]);
+    } catch (e) { /* ignore */ }
+    sounding.clear();
+  }
+  function setOutput(port, opts = {}) {
+    if (out && out !== port) panic();
+    out = port || null;
+    if (opts.channel != null) outCh = opts.channel;
+    if (opts.echo != null) echo = !!opts.echo;
+  }
+  const outputName = () => (out ? out.name : '');
+
   function tone(midi, when, dur, opts = {}) {
     const c = audio(); if (!c) return;
     const t = when || c.currentTime;
+    if (out) {
+      if (opts.monitor && !echo) return; // your keyboard already plays the VST through the DAW
+      const ms = performance.now() + Math.max(0, t - c.currentTime) * 1000;
+      const v = Math.max(1, Math.min(127, Math.round(opts.v || (opts.vel || 0.22) * 460)));
+      qSend(ms, [0x90 | outCh, midi, v]);
+      qSend(ms + Math.max(0.05, dur) * 1000, [0x80 | outCh, midi, 0]);
+      return;
+    }
     const vel = opts.vel || 0.22;
     const g = c.createGain();
     const f = c.createBiquadFilter();
@@ -283,6 +326,7 @@
     playing.forEach((n) => { try { n.stop(); } catch (e) { /* already stopped */ } });
     playing = [];
     timers.splice(0).forEach(clearTimeout);
+    panic();
   }
   function at(when, fn) {
     const c = audio();
@@ -368,6 +412,6 @@
     LETTERS, SHARPS, FLATS, KEYS, MINOR_KEYS, CIRCLE_ORDER, CHORDS, SCALES,
     mod, parseNote, pcOf, nameOf, pretty, spell, parseFormula, parseChord, transposeChord, transposeName,
     voice, identify, scaleNotes, diatonic, numberToChord, freq,
-    audio, tone, click, drum, playChord, playProgression, playMelody, parseMelody, stopAll
+    audio, tone, click, drum, playChord, playProgression, playMelody, parseMelody, stopAll, setOutput, outputName
   };
 })();
