@@ -431,7 +431,7 @@
     $('#app-sound').onchange = (e) => { ui.sound = e.target.checked; savePrefs(); };
     if ($('#snd-out')) $('#snd-out').onchange = (e) => { ui.outName = e.target.value; savePrefs(); applyOutput(); renderRail(); const t = M.audio().currentTime + 0.05; [60, 64, 67].forEach((m, k) => M.tone(m, t + k * 0.15, 0.5)); };
     if ($('#snd-echo')) $('#snd-echo').onchange = (e) => { ui.outEcho = e.target.checked; savePrefs(); applyOutput(); };
-    if ($('#backup')) { $('#backup').onclick = backup; $('#restore').onchange = (e) => restore(e.target.files[0]); }
+    if ($('#backup')) { $('#backup').onclick = backup; $('#restore').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; restore(f); }; } // cleared so the same file can be restored again
   }
   function heatmap(all) {
     const days = 84, cell = 11, gap = 3;
@@ -745,7 +745,7 @@
       const shown = semis ? { ...roll, events: roll.events.map((e) => ({ ...e, m: e.m + semis })) } : roll;
       const recording = rollRec.block === b.id;
       const segs = recording ? [] : U.segmentChords(shown.events, { flat: keyFlat(ui.viewKey || n.key || 'C') });
-      const info = roll.events.length ? (roll.clicked ? `Recorded with the count-in at ${roll.bpm} bpm in ${sigLabel(roll.beats)}${roll.downbeat ? ', with a pickup' : ''}.` : 'Recorded in free time; the tempo and bars are worked out when you transcribe.') : '';
+      const info = roll.events.length ? (!roll.recorded && roll.edited ? `Written in the piano-roll editor at ${roll.bpm} bpm in ${sigLabel(roll.beats || 4)}${roll.downbeat ? ', with a pickup' : ''}.` : roll.clicked ? `Recorded with the count-in at ${roll.bpm} bpm in ${sigLabel(roll.beats)}${roll.downbeat ? ', with a pickup' : ''}.` : 'Recorded in free time; the tempo and bars are worked out when you transcribe.') + (roll.recorded && roll.edited ? ' Edited in the piano roll.' : '') : '';
       body = `${recording ? `<div class="live-chord" data-live="${i}" aria-live="polite">${esc(rollRec.live || (rollRec.rec && rollRec.rec.armed ? 'Waiting — start playing' : 'Play…'))}</div><div class="beatbox" data-beatbox="${i}"></div>` : ''}${U.rollSVG(shown, { row: 7, ppb: 28, segments: segs })}
         ${info ? `<div class="small muted" style="margin-top:4px">${info}</div>` : ''}
         <div class="row small" style="margin-top:8px"><button class="btn sm" data-playroll="${i}" ${roll.events.length ? '' : 'disabled'}>▶ Play</button><button class="btn sm" data-redit="${i}" title="Move, add, delete or re-time notes, then write a chart or melody from them">✎ Edit notes</button>${roll.events.length ? `<button class="btn sm ghost print-only" data-mid="${i}" title="Save this take as a MIDI file for your DAW">⬇ .mid</button>` : ''}
@@ -1336,7 +1336,7 @@
     setOpt('data-mlh', 'showLH', (x) => x.checked);
     setOpt('data-mch', 'showChords', (x) => x.checked);
     setOpt('data-mcol', 'colorHands', (x) => x.checked);
-    if (window.Strum) window.Strum.bind(pane, { block: (k) => n.blocks[k], save: (rer) => markDirty(!!rer), toast, stopOthers: () => { stopChart(); follow.on = false; if (metro.on) toggleMetro(); }, toChart: (b) => strumToChart(n, b) });
+    if (window.Strum) window.Strum.bind(pane, { block: (k) => n.blocks[k], save: (rer) => markDirty(!!rer), toast, stopOthers: () => { stopChart(); follow.on = false; if (metro.on) toggleMetro(); }, toChart: (b) => strumToChart(n, b), view: (sym) => tr(sym, semis, ui.viewKey) });
     $$('[data-chstrum]', pane).forEach((x) => x.onchange = () => {
       const b = B(x.dataset.chstrum), v = x.value, S = window.Strum;
       if (v === 'none') { delete b.strum; }
@@ -2032,7 +2032,7 @@
         if (existing) Object.assign(existing, n); else Store.all().push(n);
         await Store.save(Store.get(n.id));
       }
-      if (data.topics) await Store.saveTopics(Store.topics().concat(data.topics));
+      if (data.topics) await Store.saveTopics(Array.from(new Set(Store.topics().concat(data.topics)))); // no duplicate topics when restoring twice
       toast(`Restored ${(data.notes || []).length} notes`); refresh();
     } catch (e) { toast('That file is not a Riffbook backup'); }
   }

@@ -44,6 +44,8 @@
     P('Waltz 3/4', 3, 2, 'D> - d U d U', 'Bass-heavy first beat, lighter 2 and 3.'),
     P('6/8 ballad', 6, 1, 'D> - U D - U', 'Two big pulses per bar: 1 and 4.'),
     P('6/8 rolling', 6, 1, 'D D U D D U', 'Keeps the triplet roll going.'),
+    P('12/8 slow ballad', 12, 1, 'D> - U D - U D> - U D - U', 'Four big pulses, each with a light up strum before the next.'),
+    P('12/8 blues shuffle', 12, 1, 'D - U D - U D - U D - U', 'The classic slow-blues roll: long-short on every beat.'),
     P('Half-time', 4, 2, 'D> - - - - - D U', 'Big, open feel for bridges and intros.'),
     P('Two-bar pop', 4, 2, 'D - D U - U D U D - D U D U D U', 'Bar 2 fills in the gaps — good for verses that build.')
   ];
@@ -69,7 +71,7 @@
   // Type a pattern: "D - D U - U D U", textbook shorthand "D DU UDU", arrows, and "|" between bars of a 2-bar pattern
   function parse(text, beats) {
     const t = String(text || '').replace(/↓/g, 'D').replace(/↑/g, 'U').replace(/[✕X]/g, 'x').replace(/[·.]/g, '-').trim();
-    if (!t) return null;
+    if (!t || /[^DUdux\-\s|>]/.test(t) || !/[DUdux]/.test(t)) return null; // only pattern letters are allowed
     const barTexts = t.split('|').map((x) => x.trim()).filter(Boolean);
     const bars = barTexts.map((bt) => {
       let cells = bt.split(/\s+/);
@@ -92,7 +94,11 @@
     let lost = 0;
     p.cells.forEach((c, k) => {
       if (DIR(c) === '-') return;
-      const bar = Math.floor(k / perBar(p)), pos = (k % perBar(p)) / p.sub; // in beats
+      const bar = Math.floor(k / perBar(p));
+      let pos = (k % perBar(p)) / p.sub; // in beats
+      const frac = pos - Math.floor(pos);
+      if (sub === 3 && Math.abs(frac - 0.5) < 0.01) pos = Math.floor(pos) + 2 / 3; // an "&" swings onto the last triplet
+      if (p.sub === 3 && sub !== 3 && Math.abs(frac - 2 / 3) < 0.01) pos = Math.floor(pos) + 0.5; // and back
       const j = Math.round(pos * sub);
       if (Math.abs(pos * sub - j) > 0.01 || cells[bar * N + j] !== '-') lost++;
       cells[bar * N + Math.min(N - 1, j)] = c;
@@ -278,7 +284,8 @@
   function stopSound() { sources.forEach((s) => { try { s.stop(); } catch (e) { /* done */ } }); sources = []; }
 
   /* ---------------- player (loop, metronome, speed trainer, play back the take) ---------------- */
-  const progChords = (txt) => String(txt || '').split(/[\s|]+/).filter((t) => t && t !== '.' && t !== '%');
+  let view = (sym) => sym; // "View in key": chords are heard in the key being viewed
+  const progChords = (txt) => String(txt || '').split(/[\s|]+/).filter((t) => t && t !== '.' && t !== '%').map((c) => { try { return view(c) || c; } catch (e) { return c; } });
   let player = null;
   function highlight(b, k) { $$(`[data-strumgrid="${b.id}"] .sc`).forEach((el) => el.classList.toggle('now', +el.dataset.k === k)); }
   function startClock(b, cue, onEnd) {
@@ -542,6 +549,7 @@
 
   function bind(pane, ctx) {
     const B = (i) => ctx.block(+i);
+    view = ctx.view || ((sym) => sym);
     const save = (b, rerender = true) => ctx.save(rerender);
     const setPat = (b, p, rer = true) => { b.pat = { ...b.pat, ...p, bars: barsOf({ ...b.pat, ...p }) }; save(b, rer); };
     $$('[data-strec]', pane).forEach((x) => x.onclick = async () => {
@@ -575,7 +583,11 @@
     $$('[data-sttr]', pane).forEach((x) => x.onchange = () => { const [f, i] = x.dataset.sttr.split(':'); const b = B(i); b.trainer[f] = +x.value; save(b, false); });
     $$('[data-stprog]', pane).forEach((x) => x.oninput = () => { B(x.dataset.stprog).prog = x.value; save(B(x.dataset.stprog), false); });
     $$('[data-stname]', pane).forEach((x) => x.oninput = () => { const b = B(x.dataset.stname); b.pat = { ...b.pat, name: x.value }; save(b, false); });
-    $$('[data-sttext]', pane).forEach((x) => x.onchange = () => { const b = B(x.dataset.sttext); const p = parse(x.value, b.beats || 4); if (!p) return; b.sub = p.sub; setPat(b, p); });
+    $$('[data-sttext]', pane).forEach((x) => x.onchange = () => {
+      const b = B(x.dataset.sttext); const p = parse(x.value, b.beats || 4);
+      if (!p) { if (x.value.trim()) ctx.toast('Use D U d u x - and > (e.g. D - D U - U D U) — the pattern was not changed'); x.value = textOf(b.pat); return; }
+      b.sub = p.sub; setPat(b, p);
+    });
     $$('[data-stpreset]', pane).forEach((x) => x.onchange = () => { if (x.value === '') return; const b = B(x.dataset.stpreset), p = PRESETS[+x.value]; b.pat = { beats: p.beats, sub: p.sub, bars: p.bars, cells: p.cells.slice(), name: p.name.split(' — ')[0], tip: p.tip }; b.beats = p.beats; b.sub = p.sub; save(b); });
     $$('[data-stuse]', pane).forEach((x) => x.onclick = () => { const [i, k] = x.dataset.stuse.split(':'); const b = B(i); b.pat = { ...b.pat, sub: b.bars[+k].length / b.pat.beats, bars: 1, cells: b.bars[+k].slice() }; save(b); });
     $$('[data-stbar]', pane).forEach((x) => x.onclick = () => {
