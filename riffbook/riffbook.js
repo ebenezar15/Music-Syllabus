@@ -314,7 +314,7 @@
     all: { label: 'All notes', icon: '▤', test: () => true },
     pinned: { label: 'Pinned', icon: '📌', test: (n) => n.pinned },
     favourite: { label: 'Favourites', icon: '★', test: (n) => n.favourite },
-    charts: { label: 'Charts & melodies', icon: '📄', test: (n) => (n.blocks || []).some((b) => b.kind === 'chart' || b.kind === 'melody') },
+    charts: { label: 'Charts & melodies', icon: '📄', test: (n) => (n.blocks || []).some((b) => b.kind === 'chart' || b.kind === 'melody' || b.kind === 'strum') },
     practising: { label: 'Practising', icon: '◔', test: (n) => n.status === 'practising' },
     review: { label: 'Revisit', icon: '↻', test: needsReview, hint: 'Not practised for over a week' },
     mastered: { label: 'Mastered', icon: '✓', test: (n) => n.status === 'mastered' }
@@ -601,6 +601,11 @@
       if (b) toggleRollRecord(n, b, rollRec.i); else { rollRec.rec && rollRec.rec.stop(); rollRec.block = null; rollRec.rec = null; }
     }
     if (micRec.mr) micRec.mr.stop();
+    if (window.Strum) {
+      const sid = window.Strum.recId(), sb = sid && current && (current.blocks || []).find((x) => x.id === sid);
+      if (sb) { window.Strum.finish(sb, toast); current._dirty = true; Store.save(current); } else if (sid) window.Strum.stopRec();
+      window.Strum.stop();
+    }
     stopChart(); follow.on = false; grab.block = null; finder.on = false;
     M.stopAll();
   }
@@ -667,7 +672,7 @@
       <section>
         <div class="spread"><h3>Blocks</h3>
           <div class="add-blocks" role="group" aria-label="Add a block">
-            <button data-add="chart">📄 Chart</button><button data-add="melody">🎼 Melody</button><button data-add="chords">♫ Chords</button><button data-add="placement">✋ Placement</button><button data-add="roll">▦ Piano roll</button><button data-add="audio">🎙 Audio</button><button data-add="image">🖼 Image</button><button data-add="checklist">☑ Checklist</button>
+            <button data-add="chart">📄 Chart</button><button data-add="melody">🎼 Melody</button><button data-add="strum">🎸 Strum</button><button data-add="chords">♫ Chords</button><button data-add="placement">✋ Placement</button><button data-add="roll">▦ Piano roll</button><button data-add="audio">🎙 Audio</button><button data-add="image">🖼 Image</button><button data-add="checklist">☑ Checklist</button>
           </div></div>
         <div id="blocks">${(n.blocks || []).map((b, i) => blockHTML(n, b, i, semis)).join('') || '<p class="small muted">Add a block to attach chords, a hand placement, a piano-roll take, a recording, an image or a checklist.</p>'}</div>
       </section>
@@ -707,7 +712,7 @@
     bindEditor(n, semis);
   }
 
-  const blockName = (k) => ({ chords: 'Chords', placement: 'Placement', roll: 'Piano roll', audio: 'Recording', image: 'Image', checklist: 'Checklist', chart: 'Chord chart', melody: 'Melody' }[k] || 'Block');
+  const blockName = (k) => ({ chords: 'Chords', placement: 'Placement', roll: 'Piano roll', audio: 'Recording', image: 'Image', checklist: 'Checklist', chart: 'Chord chart', melody: 'Melody', strum: 'Strumming pattern' }[k] || 'Block');
 
   function blockHTML(n, b, i, semis) {
     const head = `<div class="blk-head"><input class="blk-label" data-label="${i}" value="${esc(b.label || '')}" placeholder="${blockName(b.kind)}" aria-label="Block name">
@@ -762,6 +767,8 @@
       body = chartBlockHTML(n, b, i, semis);
     } else if (b.kind === 'melody') {
       body = melodyBlockHTML(n, b, i, semis);
+    } else if (b.kind === 'strum') {
+      body = window.Strum.blockHTML(n, b, i);
     } else if (b.kind === 'checklist') {
       body = `<div class="checks">${(b.items || []).map((it, j) => `<label class="check"><input type="checkbox" data-chk="${i}:${j}" ${it.done ? 'checked' : ''}><input type="text" data-chktxt="${i}:${j}" value="${esc(it.t)}" aria-label="Item"><button class="x" data-chkdel="${i}:${j}" aria-label="Remove item">✕</button></label>`).join('')}</div>
         <button class="btn sm ghost" data-chkadd="${i}">＋ Item</button>`;
@@ -819,6 +826,7 @@
       html += `<div class="sh-sec">Rhythm :</div><div class="sh-rhythm" style="--cols:${cells.length}">${cells.map((c, k) => `<span class="rc ${c === 'x' ? 'hit' : ''} ${k % r.sub === 0 ? 'on-beat' : ''}" aria-label="${c === 'x' ? 'play' : 'rest'}"></span>`).join('')}${r.counts.map((c) => `<span class="rcount">${esc(c)}</span>`).join('')}</div>
         <div class="sh-note">Count it: ${r.counts.map((c, k) => (cells[k] === 'x' ? `<b>${esc(c)}</b>` : `(${esc(c)})`)).join(' ')}${r.share < 1 ? ` · used in ${Math.round(r.share * 100)}% of bars` : ''}</div>`;
     }
+    if (b.strum && b.strum.cells) html += window.Strum.sheetHTML(b.strum);
     if (parsed.unknown.length) html += `<div class="sh-warn no-print">Not a chord I know: ${parsed.unknown.map((u) => `<code>${esc(u)}</code>`).join(' ')}</div>`;
     return html + '</div>';
   }
@@ -961,6 +969,7 @@
           <div class="small muted">Write a section as <code>Verse :</code>, then bars between <code>|</code>. One chord fills the bar; otherwise one chord or <code>.</code> per beat (<code>Gm . . Eb</code> = Gm for 3 beats, Eb for 1). Slash chords like <code>Bb/D</code>, <code>%</code> repeats the bar, <code>x2</code> at the end repeats the line.</div>` : ''}
         ${retxHTML(n, b, i, 'chart')}
         ${b.rhythm ? `<label class="small"><input type="checkbox" data-rshow="${i}" ${b.showRhythm !== false ? 'checked' : ''}> Show rhythm pattern on sheet</label>` : ''}
+        <label class="small">🎸 Strum pattern on sheet <select data-chstrum="${i}"><option value="none">None</option>${n.blocks.filter((y) => y.kind === 'strum' && y.pat).map((y) => `<option value="b:${esc(y.id)}">${esc(y.pat.name || y.label || 'Strumming pattern')} — ${esc(window.Strum.arrowsOf(y.pat))}</option>`).join('')}${window.Strum.PRESETS.map((p, k) => `<option value="p:${k}" ${b.strum && b.strum.cells.join(' ') === p.cells.join(' ') && b.strum.beats === p.beats ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}${b.strum && !window.Strum.PRESETS.some((p) => p.cells.join(' ') === b.strum.cells.join(' ') && p.beats === b.strum.beats) ? `<option value="keep" selected>${esc(b.strum.name || 'Custom')} — ${esc(window.Strum.arrowsOf(b.strum))}</option>` : ''}</select></label>
       </div>`;
   }
   function melodyBlockHTML(n, b, i, semis) {
@@ -1107,6 +1116,7 @@
     let out = `${b.label || n.title || 'Untitled'}\nKey - ${key} | ${sigLabel(b.beats)} | T - ${b.bpm || 80}bpm\n\n`;
     if (b.kind === 'chart') {
       out += b.text || '';
+      if (b.strum && b.strum.cells) out += `\n\nStrum : ${window.Strum.countLabels(b.strum.beats, b.strum.sub).join(' ')}\n        ${window.Strum.arrowsOf(b.strum)}   (${window.Strum.textOf(b.strum)})`;
       if (b.rhythm) out += `\n\nRhythm : ${b.rhythm.counts.map((c, k) => (b.rhythm.grid[k] === 'x' ? c : '(' + c + ')')).join(' ')}`;
     } else {
       if (b.chordBars && b.chordBars.length) out += 'Chords :\n' + TX.chartText(b.chordBars, { section: 'Chords' }).split('\n').slice(1).join('\n') + '\n\n';
@@ -1188,6 +1198,30 @@
       },
       actions: [{ label: 'Save + write chord chart', run: (ev) => { const c = chartFields(take(ev), null); if (!c) return; insertAfter(n, b, clean(Object.assign({ id: uid('b'), kind: 'chart', label: b.label || n.title || 'Chart' }, c))); toast('Chord chart written from the melody'); } }]
     });
+  }
+
+  /* ---------- strumming patterns ---------- */
+  function newStrum(n) {
+    const rc = recCfg(), beats = [2, 3, 4, 6, 12].includes(rc.beats) ? rc.beats : 4;
+    const p = window.Strum.PRESETS.find((x) => x.beats === beats) || window.Strum.PRESETS[0];
+    const ch = (n.blocks || []).find((x) => x.kind === 'chart' && x.text);
+    const prog = ch ? (TX.parseChart(ch.text, ch.beats || 4).sections[0] || { lines: [] }).lines.filter((l) => l.bars).flatMap((l) => l.bars.map((bar) => (bar.raw || '').split(/\s+/)[0])).filter((c) => c && c !== '.' && c !== '%').slice(0, 8).join(' ') : '';
+    return { label: 'Strumming pattern', beats: p.beats, bpm: rc.bpm, sub: 'auto', countBars: 1, pat: { beats: p.beats, sub: p.sub, bars: p.bars || 1, cells: p.cells.slice(), name: p.name.split(' — ')[0], tip: p.tip }, prog: prog || 'G D Em C', click: true, loop: true };
+  }
+  // Put a strum pattern on the note's chord chart, or start a chart from the strum block's chords
+  function strumToChart(n, b) {
+    const charts = n.blocks.filter((x) => x.kind === 'chart');
+    const pat = { beats: b.pat.beats, sub: b.pat.sub, bars: b.pat.bars || 1, cells: b.pat.cells.slice(), name: b.pat.name || (b.label !== 'Strumming pattern' ? b.label : '') };
+    if (charts.length) {
+      charts.forEach((c) => { c.strum = pat; c.showStrum = true; });
+      markDirty(true); toast(`Strum pattern added to ${charts.length > 1 ? charts.length + ' charts' : 'the chord chart'}`);
+      setTimeout(() => { const el = $('#blk-' + CSS.escape(charts[0].id)); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 80);
+      return;
+    }
+    const chords = String(b.prog || 'G D Em C').split(/[\s|]+/).filter(Boolean);
+    const lines = []; for (let k = 0; k < chords.length; k += 4) lines.push('| ' + chords.slice(k, k + 4).join(' | ') + ' |');
+    insertAfter(n, b, clean({ id: uid('b'), kind: 'chart', label: n.title || 'Chart', key: n.key || 'C', beats: b.pat.beats, bpm: b.bpm || 80, text: 'Verse :\n' + lines.join('\n'), strum: pat, showStrum: true }));
+    toast('Chord chart started with the strum pattern');
   }
 
   /* ---------- transcription into blocks ---------- */
@@ -1302,6 +1336,14 @@
     setOpt('data-mlh', 'showLH', (x) => x.checked);
     setOpt('data-mch', 'showChords', (x) => x.checked);
     setOpt('data-mcol', 'colorHands', (x) => x.checked);
+    if (window.Strum) window.Strum.bind(pane, { block: (k) => n.blocks[k], save: (rer) => markDirty(!!rer), toast, stopOthers: () => { stopChart(); follow.on = false; if (metro.on) toggleMetro(); }, toChart: (b) => strumToChart(n, b) });
+    $$('[data-chstrum]', pane).forEach((x) => x.onchange = () => {
+      const b = B(x.dataset.chstrum), v = x.value, S = window.Strum;
+      if (v === 'none') { delete b.strum; }
+      else if (v.startsWith('p:')) { const p = S.PRESETS[+v.slice(2)]; b.strum = { beats: p.beats, sub: p.sub, bars: p.bars || 1, cells: p.cells.slice(), name: p.name.split(' — ')[0] }; }
+      else if (v.startsWith('b:')) { const src = n.blocks.find((y) => y.id === v.slice(2)); if (src && src.pat) b.strum = { beats: src.pat.beats, sub: src.pat.sub, bars: src.pat.bars || 1, cells: src.pat.cells.slice(), name: src.pat.name || (src.label !== 'Strumming pattern' ? src.label : '') }; }
+      b.showStrum = true; markDirty(true);
+    });
     $$('[data-mroll]', pane).forEach((x) => x.onclick = () => editMelodyInRoll(n, B(x.dataset.mroll), +x.dataset.mroll));
     $$('[data-redit]', pane).forEach((x) => x.onclick = () => editTakeInRoll(n, B(x.dataset.redit), +x.dataset.redit));
     setOpt('data-mear', 'ear', (x) => x.checked);
@@ -1414,6 +1456,7 @@
       if (kind === 'melody') { const rc = recCfg(); Object.assign(blk, { label: n.title || '', key: n.key || 'C', beats: rc.beats, bpm: rc.bpm, notes: [], q: 0.5, editing: true, text: '' }); }
       if (kind === 'chart') Object.assign(blk, { label: n.title || '', key: n.key || 'C', beats: 4, bpm: n.bpm || 80, text: 'Verse :\n| C | G | Am | F |\n| C | G | F . G . | C |', editing: true });
       if (kind === 'checklist') blk.items = [{ t: '', done: false }];
+      if (kind === 'strum') Object.assign(blk, newStrum(n));
       n.blocks = (n.blocks || []).concat([blk]); markDirty(true);
       setTimeout(() => { const el = $('#blk-' + blk.id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 30);
     });
@@ -1882,6 +1925,7 @@
     { id: 'movement', icon: '⇄', name: 'Chord movement', desc: 'A progression with the voicing that makes it move.', make: (n) => { n.type = 'movement'; n.body = '# The movement\nFrom [C] to [F] via …\n\n- Where I use it:\n- Bass line:\n- Inner voice that moves:'; n.blocks = [{ id: uid('b'), kind: 'chords', label: 'Movement', prog: 'C C/E F G', beats: 2 }, { id: uid('b'), kind: 'placement', label: 'Key voicing', lh: [], rh: [], fingers: {}, symbol: '' }]; } },
     { id: 'placement', icon: '✋', name: 'Hand placement', desc: 'A keyboard diagram with fingering for both hands.', make: (n) => { n.type = 'placement'; n.body = 'Where my hands sit, which fingers, and why.'; n.blocks = [{ id: uid('b'), kind: 'placement', label: 'Placement', lh: [], rh: [], fingers: {}, symbol: '' }]; } },
     { id: 'lick', icon: '〰', name: 'Lick or run', desc: 'Capture a fill or run and a checklist to learn it in all keys.', make: (n) => { n.type = 'lick'; n.body = 'Where it fits: between vocal lines over [C]'; n.blocks = [{ id: uid('b'), kind: 'roll', label: 'The lick', roll: { bpm: n.bpm || 80, events: [] } }, { id: uid('b'), kind: 'checklist', label: 'Learn it', items: ['C', 'G', 'F', 'D', 'Bb'].map((k) => ({ t: 'Play it in ' + k, done: false })) }]; } },
+    { id: 'strum', icon: '🎸', name: 'Strumming pattern', desc: 'Strum along with the metronome — the pattern is worked out for you, then play it over chords and put it on your charts.', make: (n) => { n.type = 'idea'; n.body = ''; n.blocks = [Object.assign({ id: uid('b'), kind: 'strum' }, newStrum(n))]; } },
     { id: 'melody', icon: '🎼', name: 'Melody', desc: 'Record a tune with the count-in, or type it in letters, for students to read and play along.', make: (n) => { n.type = 'song'; n.body = ''; const rc = recCfg(); n.blocks = [{ id: uid('b'), kind: 'melody', label: '', key: 'C', beats: rc.beats, bpm: rc.bpm, q: 0.5, editing: true, text: '| G | C CB A G | EF G – C | A – – · |', notes: TX.parseMelodyText('| G | C CB A G | EF G – C | A – – · |', rc.beats).notes }]; } },
     { id: 'chart', icon: '📄', name: 'Chord chart', desc: 'A song chart like a PDF lead sheet: key, time, tempo, sections and bars. Print it or play along.', make: (n) => { n.type = 'song'; n.body = ''; n.blocks = [{ id: uid('b'), kind: 'chart', label: '', key: 'C', beats: 4, bpm: 80, editing: true, text: 'Verse :\n| C | G | Am . . F | C . G . |\n| Am | Dm | G | C |\n\nChorus :\n| F | G | Em Am | F . G . |' }]; } },
     { id: 'song', icon: '♫', name: 'Song arrangement', desc: 'Sections, chords and cues for a song you play.', make: (n) => { n.type = 'song'; n.body = '# Intro\n# Verse\n# Chorus\n# Bridge\n# Ending'; n.blocks = [{ id: uid('b'), kind: 'chords', label: 'Verse', prog: '', beats: 4 }, { id: uid('b'), kind: 'chords', label: 'Chorus', prog: '', beats: 4 }]; } },

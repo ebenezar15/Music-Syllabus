@@ -97,6 +97,18 @@ On a Mac: open **Audio MIDI Setup → Window → Show MIDI Studio**, double-clic
 ### Permissions
 MIDI connects automatically every time the app opens. The browser (or macOS, for the Mac app) asks for MIDI and microphone access once, then remembers the answer for the site/app. The Mac app allows both without any in-app prompt.
 
+### Guitar strumming patterns
+Add a **🎸 Strum** block (or the *Strumming pattern* template). Press **Record strumming**, wait for the count-in and strum along with the metronome. Riffbook hears each strum through the microphone and decodes the pattern:
+- **Any rhythm**: picks 8ths, even **16ths** (1 e & a) or **triplets** by which grid fits your playing; off-beat strums (reggae “&”s, pushes, syncopated 16ths) stay where you played them. It measures the speaker + mic delay from the count-in clicks, so the take lines up with the beat. Patterns that repeat every **2 bars** are found too. Choose *Grid* to force 8ths / 16ths / triplets — your take is re-read on that grid.
+- **Dynamics** from how hard you strummed: **>** accent, normal, *p* soft/ghost strum — shown on the grid and the sheet, and heard on playback.
+- Directions follow the strumming hand (down on the grid, up between; D D U in 6/8; D – U in shuffles). Record with the keys ↓/D, ↑/U, X (Shift = accent, Alt = soft) to set them exactly.
+- **Everything is editable**: pick a brush (↻ cycle, ↓, ↑, ✕ chuck, rest, > accent, normal, p soft) and click cells; Shift+click toggles an accent; type the pattern (`D> - d U - U D u`, shorthand `D DU UDU`, arrows, `|` between bars); name it; ＋/− bars; or use any bar as you played it.
+- **🎨 Colours**: hand colours, blue/red, green/orange, purple/teal, black & grey for printing, or your own colours for down, up, muted and accent; coloured or plain cells.
+- **▶ Play pattern** strums it on a guitar sound over your chords (one per bar) with loop, click and a **speed trainer**; **▶ My take** plays back exactly what you recorded so you can compare. With a MIDI output chosen it plays your VST.
+- 18 presets with tips (folk/pop, ballad, reggae, off-beat push, funk and syncopated 16ths, shuffle, waltz, 6/8, two-bar …).
+- **＋ Add to chord chart** puts the pattern (with its colours and dynamics) on the note's chart, or starts one from the chords; charts also have a *Strum pattern on sheet* menu, and it prints and exports with the chart.
+- No headphones? Tick *Light-only metronome* so the click stays out of the mic (the delay is then estimated from your playing).
+
 ### Hand colours
 
 Choose **Hand colours** in the sidebar: match the colour scheme, LH blue · RH orange, LH blue · RH red, LH green · RH purple, LH teal · RH pink, or pick your own. The colours apply to the piano roll, keyboard diagrams, the melody sheet and printed sheets.
